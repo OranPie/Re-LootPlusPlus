@@ -63,6 +63,10 @@ public class LootThrownItemEntity extends ThrownItemEntity {
 
     @Override
     protected ItemStack getItem() {
+        ItemStack tracked = super.getItem();
+        if (!tracked.isEmpty()) {
+            return tracked;
+        }
         if (def == null) {
             return ItemStack.EMPTY;
         }
