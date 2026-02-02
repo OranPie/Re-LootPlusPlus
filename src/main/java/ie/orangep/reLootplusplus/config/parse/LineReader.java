@@ -11,9 +11,19 @@ public final class LineReader {
         if (rawLine.isEmpty()) {
             return true;
         }
-        if (rawLine.charAt(0) == '#') {
+        String trimmed = rawLine.trim();
+        if (trimmed.isEmpty()) {
             return true;
         }
-        return rawLine.startsWith("//");
+        if (trimmed.charAt(0) == '#') {
+            return true;
+        }
+        if (trimmed.startsWith("//")) {
+            return true;
+        }
+        if (trimmed.startsWith("/")) {
+            return true;
+        }
+        return false;
     }
 }

@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.legacy;
 
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.Log;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
 
 import java.util.Locale;
 
@@ -38,6 +39,8 @@ public final class LegacyDropSanitizer {
         dropPart = fixDanglingPosOffset(dropPart, reporter);
         dropPart = fixTrailingCommas(dropPart, reporter);
         dropPart = fixSoundIdCase(dropPart, reporter);
+        dropPart = fixChestMacroItemIds(dropPart, reporter);
+        dropPart = fixEntityIdTokens(dropPart, reporter);
         dropPart = fixBareItemIds(dropPart, reporter);
         dropPart = fixLegacyWoolMeta(dropPart, reporter);
         dropPart = fixBareBlockDrops(dropPart, reporter);
@@ -661,6 +664,151 @@ public final class LegacyDropSanitizer {
                     i = j - 1;
                     continue;
                 }
+            }
+            out.append(c);
+        }
+        return changed ? out.toString() : input;
+    }
+
+    private static String fixEntityIdTokens(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        boolean changed = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            } else if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth = Math.max(0, depth - 1);
+                }
+                if (depth == 0 && startsWithIgnoreCase(input, i, "type=entity")) {
+                    int comma = input.indexOf(',', i);
+                    if (comma > 0) {
+                        int idIdx = indexOfIgnoreCase(input, "id=", comma + 1);
+                        if (idIdx > 0) {
+                            int valueStart = idIdx + 3;
+                            int j = valueStart;
+                            while (j < input.length()) {
+                                char cj = input.charAt(j);
+                                if (cj == ',' || cj == ';' || cj == '@' || cj == ')') {
+                                    break;
+                                }
+                                j++;
+                            }
+                            String rawId = input.substring(valueStart, j).trim();
+                            String fixed = LegacyEntityIdFixer.normalizeEntityId(rawId, reporter, SANITIZE_CONTEXT.get());
+                            if (!fixed.equals(rawId)) {
+                                changed = true;
+                                warnOnce(reporter, "LegacyEntityId", "mapped entity id " + rawId + " -> " + fixed);
+                            }
+                            out.append(input, i, valueStart).append(fixed);
+                            i = j - 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.append(c);
+        }
+        return changed ? out.toString() : input;
+    }
+
+    private static String fixChestMacroItemIds(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains("#chest(")) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+                out.append(c);
+                continue;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+                out.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble && input.startsWith("#chest(", i)) {
+                int start = i + "#chest(".length();
+                int depth = 1;
+                StringBuilder segment = new StringBuilder();
+                out.append("#chest(");
+                i = start;
+                for (; i < input.length(); i++) {
+                    char cj = input.charAt(i);
+                    if (cj == '(') {
+                        depth++;
+                    } else if (cj == ')') {
+                        depth--;
+                    }
+                    if (depth == 0) {
+                        String fixed = normalizeChestIds(segment.toString(), reporter);
+                        out.append(fixed).append(')');
+                        break;
+                    }
+                    segment.append(cj);
+                }
+                if (depth != 0) {
+                    out.append(segment);
+                }
+                continue;
+            }
+            out.append(c);
+        }
+        String rebuilt = out.toString();
+        return rebuilt.equals(input) ? input : rebuilt;
+    }
+
+    private static String normalizeChestIds(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean changed = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+                out.append(c);
+                continue;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+                out.append(c);
+                continue;
+            }
+            if (!inSingle && !inDouble && startsWithIgnoreCase(input, i, "id=")) {
+                int valueStart = i + 3;
+                int j = valueStart;
+                while (j < input.length()) {
+                    char cj = input.charAt(j);
+                    if (cj == ',' || cj == ')' || cj == ']' || cj == ';' || cj == '@') {
+                        break;
+                    }
+                    j++;
+                }
+                String rawId = input.substring(valueStart, j).trim();
+                String fixed = normalizeBareItemId(rawId, reporter);
+                if (!fixed.equals(rawId)) {
+                    changed = true;
+                }
+                out.append(input, i, valueStart).append(fixed);
+                i = j - 1;
+                continue;
             }
             out.append(c);
         }

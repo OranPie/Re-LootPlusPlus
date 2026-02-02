@@ -58,6 +58,14 @@ public final class LegacyEntityIdFixer {
     private LegacyEntityIdFixer() {
     }
 
+    public static String normalizeEntityId(String raw, LegacyWarnReporter reporter, String context) {
+        if (raw == null || raw.isEmpty()) {
+            return raw;
+        }
+        String mapped = mapLegacyEntityId(raw, new NbtCompound(), reporter, context);
+        return mapped == null ? raw : mapped;
+    }
+
     public static boolean fixEntityId(NbtCompound nbt, LegacyWarnReporter reporter, String context) {
         if (nbt == null) {
             return false;
