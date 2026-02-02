@@ -205,6 +205,14 @@ public final class LegacyItemNbtFixer {
                 changed = true;
                 continue;
             }
+            if (!entry.contains("UUID", NbtElement.INT_ARRAY_TYPE)) {
+                if (entry.contains("UUIDLeast", NbtElement.NUMBER_TYPE) && entry.contains("UUIDMost", NbtElement.NUMBER_TYPE)) {
+                    long least = entry.getLong("UUIDLeast");
+                    long most = entry.getLong("UUIDMost");
+                    entry.putIntArray("UUID", toIntArray(most, least));
+                    changed = true;
+                }
+            }
             if (entry.contains("AttributeName", NbtElement.STRING_TYPE)) {
                 String raw = entry.getString("AttributeName");
                 String normalized = normalizeAttributeId(raw, reporter, context);
@@ -221,6 +229,15 @@ public final class LegacyItemNbtFixer {
                 tag.put("AttributeModifiers", fixed);
             }
         }
+    }
+
+    private static int[] toIntArray(long most, long least) {
+        return new int[] {
+            (int) (most >> 32),
+            (int) most,
+            (int) (least >> 32),
+            (int) least
+        };
     }
 
     private static String resolvePotioncoreNamespace() {
