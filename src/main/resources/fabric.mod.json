@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "re-lootplusplus",
+  "version": "${version}",
+  "name": "Re-LootPlusPlus",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/re-lootplusplus/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "ie.orangep.reLootplusplus.client.ReLootPlusPlusClient"
+    ],
+    "main": [
+      "ie.orangep.reLootplusplus.ReLootPlusPlus"
+    ]
+  },
+  "mixins": [
+    "re-lootplusplus.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

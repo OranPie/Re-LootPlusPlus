@@ -1,0 +1,42 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "ie.orangep.reLootplusplus.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "BlockDropMixin",
+    "ItemStackSizeMixin",
+    "LuckyAddonCraftingMixin",
+    "LuckyAddonIdFallbackMixin",
+    "LuckyDropActionsMixin",
+    "LuckyDropEvaluatorMixin",
+    "LuckyDropSanitizerMixin",
+    "LuckyFabricGameApiMixin",
+    "LuckyLoaderMixin",
+    "LuckyPluginInitMixin",
+    "LuckyParserMixin",
+    "RecipeManagerMixin",
+    "PlayerManagerMixin",
+    "LuckySingleDropMixin",
+    "PlayerEntityEatMixin",
+    "LuckyWeightedDropMixin"
+  ],
+  "client": [
+    "ArmorFeatureRendererMixin",
+    "EntityRenderDispatcherMixin",
+    "MinecraftClientMixin",
+    "PackScreenInvoker",
+    "PackScreenMixin",
+    "ResourcePackEntryMixin",
+    "ResourcePackOrganizerAbstractPackMixin",
+    "ResourcePackProfileAccessor",
+    "ScreenInvoker",
+    "ResourcePackProfileMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

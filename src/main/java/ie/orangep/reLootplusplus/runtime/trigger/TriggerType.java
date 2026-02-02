@@ -1,0 +1,17 @@
+package ie.orangep.reLootplusplus.runtime.trigger;
+
+public enum TriggerType {
+    HELD,
+    IN_INVENTORY,
+    BLOCKS_IN_INVENTORY,
+    WEARING_ARMOUR,
+    STANDING_ON_BLOCK,
+    INSIDE_BLOCK,
+    RIGHT_CLICK,
+    HITTING_ENTITY_TO_ENTITY,
+    HITTING_ENTITY_TO_YOURSELF,
+    BREAKING_BLOCK,
+    DIGGING_BLOCK,
+    DIGGING_BLOCK_BLOCK,
+    NEAR_ENTITY
+}
