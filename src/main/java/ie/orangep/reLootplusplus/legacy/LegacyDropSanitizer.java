@@ -1750,7 +1750,14 @@ public final class LegacyDropSanitizer {
     }
 
     private static int indexOfIgnoreCase(String input, String needle) {
-        for (int i = 0; i <= input.length() - needle.length(); i++) {
+        return indexOfIgnoreCase(input, needle, 0);
+    }
+
+    private static int indexOfIgnoreCase(String input, String needle, int start) {
+        if (start < 0) {
+            start = 0;
+        }
+        for (int i = start; i <= input.length() - needle.length(); i++) {
             if (input.regionMatches(true, i, needle, 0, needle.length())) {
                 return i;
             }
