@@ -181,14 +181,26 @@ public final class LegacyItemNbtFixer {
         if (tag == null || !tag.contains("AttributeModifiers", NbtElement.LIST_TYPE)) {
             return;
         }
-        NbtList list = tag.getList("AttributeModifiers", NbtElement.COMPOUND_TYPE);
-        if (list == null || list.isEmpty()) {
+        NbtElement rawList = tag.get("AttributeModifiers");
+        if (!(rawList instanceof NbtList list)) {
+            return;
+        }
+        if (list.getHeldType() != NbtElement.COMPOUND_TYPE) {
+            tag.remove("AttributeModifiers");
+            warn(reporter, "LegacyNBT", "removed AttributeModifiers with invalid list type" + formatContext(context));
+            return;
+        }
+        if (list.isEmpty()) {
             return;
         }
         NbtList fixed = new NbtList();
         boolean changed = false;
         for (int i = 0; i < list.size(); i++) {
             NbtElement element = list.get(i);
+            if (element == null) {
+                changed = true;
+                continue;
+            }
             if (!(element instanceof NbtCompound entry)) {
                 changed = true;
                 continue;
