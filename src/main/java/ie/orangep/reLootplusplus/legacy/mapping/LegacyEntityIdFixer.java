@@ -5,6 +5,7 @@ import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.text.LegacyText;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyItemNbtFixer;
 import ie.orangep.reLootplusplus.runtime.RuntimeState;
+import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
@@ -30,6 +31,8 @@ public final class LegacyEntityIdFixer {
         register("FallingSand", "minecraft:falling_block");
         register("PrimedTnt", "minecraft:tnt");
         register("FireworksRocketEntity", "minecraft:firework_rocket");
+        register("fireworks_rocket", "minecraft:firework_rocket");
+        register("minecraft:fireworks_rocket", "minecraft:firework_rocket");
         register("WitherBoss", "minecraft:wither");
         register("SnowMan", "minecraft:snow_golem");
         register("VillagerGolem", "minecraft:iron_golem");
@@ -155,7 +158,7 @@ public final class LegacyEntityIdFixer {
             default -> mapped = "minecraft:horse";
         }
         warn(reporter, "LegacyEntityId", "mapped 'EntityHorse' type=" + type + " -> '" + mapped + "'" + formatContext(context));
-        return mapped;
+        return CustomRemapStore.map(mapped, reporter, null, "id");
     }
 
     private static void fixItemEntityStack(NbtCompound nbt, LegacyWarnReporter reporter, String context) {
@@ -245,6 +248,7 @@ public final class LegacyEntityIdFixer {
         }
         normalized = sanitizeItemId(normalized, reporter, context);
         normalized = applyNamespaceRemap(normalized, reporter, context);
+        normalized = mapLegacyItemAlias(normalized, reporter, context);
         if (normalized.endsWith(":loot_chest")) {
             String mapped = "minecraft:chest";
             warn(reporter, "LegacyItemId", "mapped loot_chest -> " + mapped + formatContext(context));
@@ -533,9 +537,13 @@ public final class LegacyEntityIdFixer {
     }
 
     private static String sanitizePath(String path) {
+        String cleaned = path;
+        while (cleaned.startsWith("/") || cleaned.startsWith(".") || cleaned.startsWith("\\")) {
+            cleaned = cleaned.substring(1);
+        }
         StringBuilder out = new StringBuilder();
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
+        for (int i = 0; i < cleaned.length(); i++) {
+            char c = cleaned.charAt(i);
             if (Identifier.isPathCharacterValid(c)) {
                 out.append(c);
             } else if (Character.isUpperCase(c)) {
@@ -545,6 +553,34 @@ public final class LegacyEntityIdFixer {
             }
         }
         return out.toString();
+    }
+
+    private static String mapLegacyItemAlias(String id, LegacyWarnReporter reporter, String context) {
+        Identifier parsed = Identifier.tryParse(id);
+        if (parsed == null) {
+            return id;
+        }
+        String namespace = parsed.getNamespace();
+        String path = parsed.getPath();
+        if (!"minecraft".equalsIgnoreCase(namespace)) {
+            return id;
+        }
+        String mappedPath = switch (path) {
+            case "noteblock" -> "note_block";
+            case "wooden_pressure_plate" -> "oak_pressure_plate";
+            case "wooden_button" -> "oak_button";
+            case "wooden_door" -> "oak_door";
+            case "trapdoor" -> "oak_trapdoor";
+            case "fence_gate" -> "oak_fence_gate";
+            case "magic_book" -> "enchanted_book";
+            default -> null;
+        };
+        if (mappedPath == null || mappedPath.equals(path)) {
+            return id;
+        }
+        String mapped = "minecraft:" + mappedPath;
+        warn(reporter, "LegacyItemId", "mapped legacy item " + id + " -> " + mapped + formatContext(context));
+        return mapped;
     }
 
     private static String toSnakeCase(String input) {
@@ -578,7 +614,7 @@ public final class LegacyEntityIdFixer {
             reporter.warnOnce(type, detail, null);
             return;
         }
-        Log.warn("[LootPP-Legacy] {} {}", type, detail);
+        Log.warn("Legacy", "{} {}", type, detail);
     }
 
     private static String formatContext(String context) {

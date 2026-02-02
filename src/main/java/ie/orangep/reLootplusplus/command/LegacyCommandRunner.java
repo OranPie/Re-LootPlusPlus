@@ -624,15 +624,58 @@ public final class LegacyCommandRunner {
 
     private SoundEvent resolveSound(String id, ExecContext ctx) {
         Identifier identifier = Identifier.tryParse(id);
+        String normalized = null;
         if (identifier == null) {
-            ctx.warnReporter().warn("LegacySound", "bad id " + id, ctx.sourceLoc());
-            return null;
+            normalized = normalizeSoundId(id);
+            identifier = normalized == null ? null : Identifier.tryParse(normalized);
+            if (identifier == null) {
+                ctx.warnReporter().warn("LegacySound", "bad id " + id, ctx.sourceLoc());
+                return null;
+            }
         }
         if (!Registry.SOUND_EVENT.containsId(identifier)) {
+            if (normalized == null) {
+                normalized = normalizeSoundId(id);
+            }
+            Identifier retry = normalized == null ? null : Identifier.tryParse(normalized);
+            if (retry != null && Registry.SOUND_EVENT.containsId(retry)) {
+                ctx.warnReporter().warn("LegacySound", "normalized " + id + " -> " + normalized, ctx.sourceLoc());
+                return Registry.SOUND_EVENT.get(retry);
+            }
             ctx.warnReporter().warn("LegacySound", "missing " + id, ctx.sourceLoc());
             return null;
         }
         return Registry.SOUND_EVENT.get(identifier);
+    }
+
+    private static String normalizeSoundId(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String namespace = "minecraft";
+        String path = trimmed;
+        int idx = trimmed.indexOf(':');
+        if (idx >= 0) {
+            namespace = trimmed.substring(0, idx);
+            path = trimmed.substring(idx + 1);
+        }
+        namespace = namespace.toLowerCase(java.util.Locale.ROOT);
+        StringBuilder cleaned = new StringBuilder(path.length());
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '/' || c == '.' || c == '_' || c == '-') {
+                cleaned.append(c);
+            } else if (Character.isUpperCase(c)) {
+                cleaned.append(Character.toLowerCase(c));
+            } else {
+                cleaned.append('_');
+            }
+        }
+        return namespace + ":" + cleaned;
     }
 
     private EntityType<?> resolveEntityType(String id, ExecContext ctx) {

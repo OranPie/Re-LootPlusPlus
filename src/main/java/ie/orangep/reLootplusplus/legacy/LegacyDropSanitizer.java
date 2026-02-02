@@ -641,7 +641,7 @@ public final class LegacyDropSanitizer {
             if (!inQuotes) {
                 if (c == '(') depth++;
                 if (c == ')') depth = Math.max(0, depth - 1);
-                if (depth == 0 && input.startsWith("type=sound,ID=", i)) {
+                if (depth <= 1 && input.startsWith("type=sound,ID=", i)) {
                     int start = i + "type=sound,ID=".length();
                     int j = start;
                     while (j < input.length()) {
@@ -1637,6 +1637,8 @@ public final class LegacyDropSanitizer {
             mappedPath = "poppy";
         } else if ("yellow_flower".equals(loweredPath)) {
             mappedPath = "dandelion";
+        } else if ("magic_book".equals(loweredPath)) {
+            mappedPath = "enchanted_book";
         }
         String fixedNamespace = namespace == null ? "minecraft" : namespace.toLowerCase(Locale.ROOT);
         String sanitizedPath = sanitizePath(mappedPath);
@@ -1870,7 +1872,7 @@ public final class LegacyDropSanitizer {
             detail = detail + " @ " + ctx;
         }
         if (reporter == null) {
-            Log.warn("[LootPP-Legacy] {} {}", type, detail);
+            Log.warn("Legacy", "{} {}", type, detail);
             return;
         }
         reporter.warnOnce(type, detail, null);
