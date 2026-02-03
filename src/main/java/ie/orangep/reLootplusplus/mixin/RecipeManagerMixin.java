@@ -71,6 +71,7 @@ public abstract class RecipeManagerMixin {
             return null;
         }
         List<String> pattern = splitPattern(def.pattern());
+        pattern = trimTrailingEmptyRows(pattern, reporter, def.sourceLoc());
         if (pattern.isEmpty()) {
             return null;
         }
@@ -323,6 +324,28 @@ public abstract class RecipeManagerMixin {
             }
         }
         return rows;
+    }
+
+    private static List<String> trimTrailingEmptyRows(List<String> rows, LegacyWarnReporter reporter, SourceLoc loc) {
+        if (rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        int end = rows.size();
+        while (end > 1) {
+            String row = rows.get(end - 1);
+            if (row != null && row.trim().isEmpty()) {
+                end--;
+                continue;
+            }
+            break;
+        }
+        if (end == rows.size()) {
+            return rows;
+        }
+        if (reporter != null) {
+            reporter.warnOnce("LegacyRecipePattern", "trimmed trailing empty pattern rows", loc);
+        }
+        return new ArrayList<>(rows.subList(0, end));
     }
 
     private static Identifier buildId(String outputId, String kind, SourceLoc loc, int index) {
