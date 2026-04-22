@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
+import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.minecraft.util.Identifier;
@@ -54,6 +55,10 @@ public final class LegacyEffectIdMapper {
         alias("harm", "minecraft:instant_damage");
         alias("instantdamage", "minecraft:instant_damage");
         alias("instant_damage", "minecraft:instant_damage");
+        // Keep legacy bare names in PotionCore namespace, then let namespace remap
+        // route them to configured replacement (e.g. re_potioncore:*).
+        alias("perplexity", "potioncore:perplexity");
+        alias("drown", "potioncore:drown");
     }
 
     private LegacyEffectIdMapper() {
@@ -134,7 +139,7 @@ public final class LegacyEffectIdMapper {
         if (warnReporter != null) {
             warnReporter.warnOnce("LegacyNamespace", "mapped potioncore -> " + target + " for '" + id + "' -> '" + mapped + "'", loc);
         }
-        return mapped;
+        return CustomRemapStore.map(mapped, warnReporter, loc, "effect");
     }
 
     private static void register(int id, String modern) {

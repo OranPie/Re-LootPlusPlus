@@ -19,13 +19,18 @@ public final class ReLootPlusPlusConfig {
     public boolean dryRun = false;
     public boolean exportReports = true;
     public boolean exportRawLines = true;
-    public String exportDir = "logs/re_lpp";
+    public String exportDir = "logs/re_lootplusplus";
     public List<String> extraAddonDirs = new ArrayList<>();
     public String duplicateStrategy = "suffix";
     public String potioncoreNamespace = "re_potioncore";
     public boolean skipMissingEntityRenderers = false;
     public boolean injectResourcePacks = true;
+    public boolean logWarnings = false;
     public boolean logLegacyWarnings = false;
+    public boolean logDebug = false;
+    public int legacyWarnConsoleLimitPerType = 5;
+    public boolean legacyWarnConsoleSummary = true;
+    public List<String> disabledAddonPacks = new ArrayList<>();
 
     public static ReLootPlusPlusConfig load() {
         Path configDir = FabricLoader.getInstance().getConfigDir();
@@ -41,16 +46,16 @@ public final class ReLootPlusPlusConfig {
                     config = loaded;
                 }
             } catch (JsonSyntaxException e) {
-                Log.warn("Invalid config json {}, using defaults", configFile, e);
+                Log.error("Config", "Invalid config json {}, using defaults", configFile, e);
             } catch (Exception e) {
-                Log.warn("Failed to read config {}, using defaults", configFile, e);
+                Log.error("Config", "Failed to read config {}, using defaults", configFile, e);
             }
         } else {
             try {
                 Files.createDirectories(configDir);
                 Files.writeString(configFile, gson.toJson(config), StandardCharsets.UTF_8);
             } catch (Exception e) {
-                Log.warn("Failed to write default config {}", configFile, e);
+                Log.error("Config", "Failed to write default config {}", configFile, e);
             }
         }
 
@@ -62,7 +67,7 @@ public final class ReLootPlusPlusConfig {
 
     public Path resolveExportDir(Path gameDir) {
         if (exportDir == null || exportDir.isBlank()) {
-            return gameDir.resolve("logs").resolve("re_lpp");
+            return gameDir.resolve("logs").resolve("re_lootplusplus");
         }
         Path dir = Path.of(exportDir);
         if (dir.isAbsolute()) {
@@ -73,16 +78,22 @@ public final class ReLootPlusPlusConfig {
 
     private void normalize() {
         if (exportDir == null || exportDir.isBlank()) {
-            exportDir = "logs/re_lpp";
+            exportDir = "logs/re_lootplusplus";
         }
         if (extraAddonDirs == null) {
             extraAddonDirs = new ArrayList<>();
+        }
+        if (disabledAddonPacks == null) {
+            disabledAddonPacks = new ArrayList<>();
         }
         if (duplicateStrategy == null || duplicateStrategy.isBlank()) {
             duplicateStrategy = "suffix";
         }
         if (potioncoreNamespace == null || potioncoreNamespace.isBlank()) {
             potioncoreNamespace = "re_potioncore";
+        }
+        if (legacyWarnConsoleLimitPerType < 0) {
+            legacyWarnConsoleLimitPerType = 0;
         }
     }
 
@@ -92,8 +103,16 @@ public final class ReLootPlusPlusConfig {
         applyBooleanOverride("relootplusplus.exportRawLines", "RELOOTPLUSPLUS_EXPORT_RAW_LINES", value -> exportRawLines = value);
         applyBooleanOverride("relootplusplus.injectResourcePacks", "RELOOTPLUSPLUS_INJECT_RESOURCE_PACKS",
             value -> injectResourcePacks = value);
+        applyBooleanOverride("relootplusplus.logWarnings", "RELOOTPLUSPLUS_LOG_WARNINGS",
+            value -> logWarnings = value);
         applyBooleanOverride("relootplusplus.logLegacyWarnings", "RELOOTPLUSPLUS_LOG_LEGACY_WARNINGS",
             value -> logLegacyWarnings = value);
+        applyBooleanOverride("relootplusplus.logDebug", "RELOOTPLUSPLUS_LOG_DEBUG",
+            value -> logDebug = value);
+        applyIntOverride("relootplusplus.legacyWarnConsoleLimitPerType", "RELOOTPLUSPLUS_LEGACY_WARN_CONSOLE_LIMIT_PER_TYPE",
+            value -> legacyWarnConsoleLimitPerType = value);
+        applyBooleanOverride("relootplusplus.legacyWarnConsoleSummary", "RELOOTPLUSPLUS_LEGACY_WARN_CONSOLE_SUMMARY",
+            value -> legacyWarnConsoleSummary = value);
         String exportDirProp = firstNonBlank(
             System.getProperty("relootplusplus.exportDir"),
             System.getenv("RELOOTPLUSPLUS_EXPORT_DIR")
@@ -134,7 +153,7 @@ public final class ReLootPlusPlusConfig {
             Files.createDirectories(configDir);
             Files.writeString(configFile, gson.toJson(this), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            Log.warn("Failed to write config {}", configFile, e);
+            Log.error("Config", "Failed to write config {}", configFile, e);
         }
     }
 
@@ -149,6 +168,29 @@ public final class ReLootPlusPlusConfig {
         return "suffix";
     }
 
+    public boolean isAddonEnabled(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        if (disabledAddonPacks == null) {
+            return true;
+        }
+        return disabledAddonPacks.stream().noneMatch(id::equalsIgnoreCase);
+    }
+
+    public void setAddonEnabled(String id, boolean enabled) {
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        if (disabledAddonPacks == null) {
+            disabledAddonPacks = new ArrayList<>();
+        }
+        disabledAddonPacks.removeIf(id::equalsIgnoreCase);
+        if (!enabled) {
+            disabledAddonPacks.add(id);
+        }
+    }
+
     private void applyBooleanOverride(String propKey, String envKey, java.util.function.Consumer<Boolean> setter) {
         String raw = firstNonBlank(System.getProperty(propKey), System.getenv(envKey));
         if (raw == null) {
@@ -159,6 +201,17 @@ public final class ReLootPlusPlusConfig {
             setter.accept(true);
         } else if ("false".equals(lowered) || "0".equals(lowered) || "no".equals(lowered)) {
             setter.accept(false);
+        }
+    }
+
+    private void applyIntOverride(String propKey, String envKey, java.util.function.Consumer<Integer> setter) {
+        String raw = firstNonBlank(System.getProperty(propKey), System.getenv(envKey));
+        if (raw == null) {
+            return;
+        }
+        try {
+            setter.accept(Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException ignored) {
         }
     }
 

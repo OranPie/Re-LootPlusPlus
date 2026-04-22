@@ -64,12 +64,14 @@ public final class PackIndex {
     private void index(AddonPack pack) {
         Map<String, List<LineRecord>> fileMap = new HashMap<>();
         try (ZipFile zip = new ZipFile(pack.zipPath().toFile())) {
+            String prefix = findZipContentPrefix(zip);
             for (ZipEntry entry : Collections.list(zip.entries())) {
                 if (entry.isDirectory()) {
                     continue;
                 }
-                String name = entry.getName();
-                if (!name.startsWith("config/") || !name.endsWith(".txt")) {
+                String rawName = entry.getName();
+                String name = prefix.isEmpty() ? rawName : stripPrefix(rawName, prefix);
+                if (name == null || !isConfigText(name)) {
                     continue;
                 }
                 List<String> rawLines = PackFileReader.readLines(zip, entry);
@@ -89,8 +91,51 @@ public final class PackIndex {
                 fileMap.put(name, records);
             }
         } catch (Exception e) {
-            Log.warn("Failed to index pack {}", pack.zipPath(), e);
+            Log.error("Pack", "Failed to index pack {}", pack.zipPath(), e);
         }
         linesByPack.put(pack, fileMap);
+    }
+
+    /**
+     * Returns the single top-level directory prefix shared by ALL entries in a zip, or "".
+     * Example: if every entry starts with "LuckyBlockOlymp/", returns "LuckyBlockOlymp/".
+     * If any entry sits at the root level, returns "" (no stripping needed).
+     */
+    public static String findZipContentPrefix(ZipFile zip) {
+        String prefix = null;
+        for (ZipEntry entry : Collections.list(zip.entries())) {
+            if (entry.isDirectory()) {
+                continue;
+            }
+            String name = entry.getName();
+            int slash = name.indexOf('/');
+            if (slash < 0) {
+                return "";
+            }
+            String dir = name.substring(0, slash + 1);
+            if (prefix == null) {
+                prefix = dir;
+            } else if (!prefix.equals(dir)) {
+                return "";
+            }
+        }
+        return prefix != null ? prefix : "";
+    }
+
+    private static String stripPrefix(String name, String prefix) {
+        if (name.startsWith(prefix)) {
+            return name.substring(prefix.length());
+        }
+        return null;
+    }
+
+    private boolean isConfigText(String name) {
+        if (name == null || !name.endsWith(".txt")) {
+            return false;
+        }
+        if (name.startsWith("config/")) {
+            return true;
+        }
+        return "recipes.txt".equals(name) || "config/recipes.txt".equals(name);
     }
 }

@@ -49,7 +49,7 @@ public final class BlockDropsLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} block drop add rules", rules.size());
+        Log.info("Loader", "Loaded {} block drop add rules", rules.size());
         return rules;
     }
 
@@ -72,7 +72,7 @@ public final class BlockDropsLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} block drop remove rules", rules.size());
+        Log.info("Loader", "Loaded {} block drop remove rules", rules.size());
         return rules;
     }
 

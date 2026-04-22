@@ -11,6 +11,7 @@ import ie.orangep.reLootplusplus.config.model.drop.DropRoller;
 import ie.orangep.reLootplusplus.config.model.rule.ThrownDef;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.projectile.thrown.ThrownItemEntity;
@@ -23,9 +24,9 @@ import net.minecraft.util.registry.Registry;
 import net.minecraft.world.World;
 
 public class LootThrownItemEntity extends ThrownItemEntity {
-    private final ThrownDef def;
-    private final LegacyCommandRunner commandRunner;
-    private final LegacyWarnReporter warnReporter;
+    private ThrownDef def;
+    private LegacyCommandRunner commandRunner;
+    private LegacyWarnReporter warnReporter;
 
     public LootThrownItemEntity(
         EntityType<? extends ThrownItemEntity> entityType,
@@ -59,6 +60,37 @@ public class LootThrownItemEntity extends ThrownItemEntity {
         this.def = def;
         this.commandRunner = commandRunner;
         this.warnReporter = warnReporter;
+    }
+
+    /**
+     * When deserialized (or created via {@code /summon}), restore the thrown def from the
+     * {@code ItemThrown} NBT string key using the RuntimeState ThrownRegistry.
+     */
+    @Override
+    public void readNbt(NbtCompound nbt) {
+        super.readNbt(nbt);
+        if (this.def == null && nbt.contains("ItemThrown", net.minecraft.nbt.NbtElement.STRING_TYPE)) {
+            String itemId = nbt.getString("ItemThrown");
+            var registry = RuntimeState.thrownRegistry();
+            if (registry != null) {
+                this.def = registry.get(itemId);
+            }
+        }
+        if (this.commandRunner == null) {
+            this.commandRunner = RuntimeState.commandRunner();
+        }
+        if (this.warnReporter == null) {
+            this.warnReporter = RuntimeState.warnReporter();
+        }
+    }
+
+    @Override
+    public NbtCompound writeNbt(NbtCompound nbt) {
+        super.writeNbt(nbt);
+        if (this.def != null) {
+            nbt.putString("ItemThrown", this.def.itemId());
+        }
+        return nbt;
     }
 
     @Override

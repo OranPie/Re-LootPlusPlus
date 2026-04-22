@@ -16,6 +16,7 @@ import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.recipe.RecipeManager;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.registry.Registry;
 import net.minecraft.util.profiler.Profiler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,6 +24,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,19 +34,22 @@ import java.util.Map;
 public abstract class RecipeManagerMixin {
     @Inject(method = "apply", at = @At("HEAD"))
     private void relootplusplus$injectLegacyRecipes(Map<Identifier, JsonElement> map, ResourceManager manager, Profiler profiler, CallbackInfo ci) {
+        LegacyWarnReporter reporter = RuntimeState.warnReporter();
+        sanitizeLegacyAddonRecipes(map, reporter);
+
         RecipeDefinitions defs = RuntimeState.recipeDefinitions();
         if (defs == null) {
             return;
         }
-        LegacyWarnReporter reporter = RuntimeState.warnReporter();
         int added = 0;
         int index = 0;
+        Map<String, String> knownItemCache = new HashMap<>();
         for (ShapedRecipeDef def : defs.shaped()) {
             Identifier id = buildId(def.outputId(), "shaped", def.sourceLoc(), index++);
             if (map.containsKey(id)) {
                 continue;
             }
-            JsonObject json = buildShaped(def, reporter);
+            JsonObject json = buildShaped(def, reporter, knownItemCache);
             if (json != null) {
                 map.put(id, json);
                 added++;
@@ -54,7 +60,7 @@ public abstract class RecipeManagerMixin {
             if (map.containsKey(id)) {
                 continue;
             }
-            JsonObject json = buildShapeless(def, reporter);
+            JsonObject json = buildShapeless(def, reporter, knownItemCache);
             if (json != null) {
                 map.put(id, json);
                 added++;
@@ -65,13 +71,182 @@ public abstract class RecipeManagerMixin {
         }
     }
 
-    private static JsonObject buildShaped(ShapedRecipeDef def, LegacyWarnReporter reporter) {
-        String outputId = normalizeRecipeItem(def.outputId(), def.outputMeta(), reporter, def.sourceLoc());
+    private static void sanitizeLegacyAddonRecipes(Map<Identifier, JsonElement> map, LegacyWarnReporter reporter) {
+        if (map == null || map.isEmpty()) {
+            return;
+        }
+        Map<String, String> fuzzyItemCache = new HashMap<>();
+        Iterator<Map.Entry<Identifier, JsonElement>> it = map.entrySet().iterator();
+        int removed = 0;
+        while (it.hasNext()) {
+            Map.Entry<Identifier, JsonElement> entry = it.next();
+            Identifier id = entry.getKey();
+            if (id == null || !"relootplusplus".equals(id.getNamespace())) {
+                continue;
+            }
+            JsonElement value = entry.getValue();
+            if (!(value instanceof JsonObject json)) {
+                continue;
+            }
+            if (!sanitizeRecipeJson(json, reporter, fuzzyItemCache)) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0 && reporter != null) {
+            reporter.warnOnce("LegacyRecipe", "removed " + removed + " invalid addon recipes", null);
+        }
+    }
+
+    private static boolean sanitizeRecipeJson(JsonObject json, LegacyWarnReporter reporter, Map<String, String> fuzzyItemCache) {
+        JsonObject result = json.has("result") && json.get("result").isJsonObject() ? json.getAsJsonObject("result") : null;
+        if (result == null) {
+            return false;
+        }
+        if (!sanitizeItemField(result, "item", reporter, fuzzyItemCache)) {
+            return false;
+        }
+
+        JsonObject key = json.has("key") && json.get("key").isJsonObject() ? json.getAsJsonObject("key") : null;
+        if (key != null) {
+            for (Map.Entry<String, JsonElement> symbolEntry : key.entrySet()) {
+                if (!sanitizeIngredient(symbolEntry.getValue(), reporter, fuzzyItemCache)) {
+                    return false;
+                }
+            }
+        }
+
+        if (json.has("ingredients") && json.get("ingredients").isJsonArray()) {
+            JsonArray ingredients = json.getAsJsonArray("ingredients");
+            JsonArray fixed = new JsonArray();
+            for (JsonElement ingredient : ingredients) {
+                if (sanitizeIngredient(ingredient, reporter, fuzzyItemCache)) {
+                    fixed.add(ingredient);
+                }
+            }
+            if (fixed.size() == 0) {
+                return false;
+            }
+            if (fixed.size() != ingredients.size()) {
+                json.add("ingredients", fixed);
+            }
+        }
+        return true;
+    }
+
+    private static boolean sanitizeIngredient(JsonElement ingredient, LegacyWarnReporter reporter, Map<String, String> fuzzyItemCache) {
+        if (ingredient == null || ingredient.isJsonNull()) {
+            return false;
+        }
+        if (ingredient.isJsonArray()) {
+            JsonArray src = ingredient.getAsJsonArray();
+            JsonArray fixed = new JsonArray();
+            for (JsonElement nested : src) {
+                if (sanitizeIngredient(nested, reporter, fuzzyItemCache)) {
+                    fixed.add(nested);
+                }
+            }
+            if (fixed.size() == 0) {
+                return false;
+            }
+            if (fixed.size() != src.size()) {
+                while (src.size() > 0) {
+                    src.remove(0);
+                }
+                for (JsonElement nested : fixed) {
+                    src.add(nested);
+                }
+            }
+            return true;
+        }
+        if (!ingredient.isJsonObject()) {
+            return false;
+        }
+        JsonObject obj = ingredient.getAsJsonObject();
+        if (obj.has("tag")) {
+            return true;
+        }
+        return sanitizeItemField(obj, "item", reporter, fuzzyItemCache);
+    }
+
+    private static boolean sanitizeItemField(JsonObject obj, String key, LegacyWarnReporter reporter, Map<String, String> fuzzyItemCache) {
+        if (obj == null || !obj.has(key) || !obj.get(key).isJsonPrimitive()) {
+            return false;
+        }
+        String rawId = obj.get(key).getAsString();
+        String fixed = resolveRecipeItemId(rawId, reporter, fuzzyItemCache);
+        if (fixed == null) {
+            return false;
+        }
+        if (!fixed.equals(rawId)) {
+            obj.addProperty(key, fixed);
+            if (reporter != null) {
+                reporter.warnOnce("LegacyRecipeItem", "mapped recipe item " + rawId + " -> " + fixed, null);
+            }
+        }
+        return true;
+    }
+
+    private static String resolveRecipeItemId(String rawId, LegacyWarnReporter reporter, Map<String, String> fuzzyItemCache) {
+        if (rawId == null || rawId.isBlank()) {
+            return null;
+        }
+        String normalized = LegacyEntityIdFixer.normalizeItemId(rawId, reporter, null);
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+        Identifier parsed = Identifier.tryParse(normalized);
+        if (parsed == null) {
+            return null;
+        }
+        if (Registry.ITEM.containsId(parsed)) {
+            return parsed.toString();
+        }
+
+        String fuzzyKey = parsed.getNamespace() + ":" + fuzzyKey(parsed.getPath());
+        if (fuzzyItemCache.containsKey(fuzzyKey)) {
+            String cached = fuzzyItemCache.get(fuzzyKey);
+            return cached == null || cached.isBlank() ? null : cached;
+        }
+
+        String resolved = null;
+        for (Identifier candidate : Registry.ITEM.getIds()) {
+            if (!candidate.getNamespace().equals(parsed.getNamespace())) {
+                continue;
+            }
+            if (fuzzyKey(candidate.getPath()).equals(fuzzyKey(parsed.getPath()))) {
+                resolved = candidate.toString();
+                break;
+            }
+        }
+        fuzzyItemCache.put(fuzzyKey, resolved == null ? "" : resolved);
+        return resolved;
+    }
+
+    private static String fuzzyKey(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(path.length());
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                out.append(c);
+            } else if (Character.isUpperCase(c)) {
+                out.append(Character.toLowerCase(c));
+            }
+        }
+        return out.toString();
+    }
+
+    private static JsonObject buildShaped(ShapedRecipeDef def, LegacyWarnReporter reporter, Map<String, String> knownItemCache) {
+        String outputId = normalizeRecipeItem(def.outputId(), def.outputMeta(), reporter, def.sourceLoc(), knownItemCache);
         if (outputId == null) {
             return null;
         }
         List<String> pattern = splitPattern(def.pattern());
         pattern = trimTrailingEmptyRows(pattern, reporter, def.sourceLoc());
+        pattern = trimPatternToGrid(pattern, reporter, def.sourceLoc());
         if (pattern.isEmpty()) {
             return null;
         }
@@ -88,24 +263,38 @@ public abstract class RecipeManagerMixin {
         root.add("pattern", patternJson);
         JsonObject key = new JsonObject();
         java.util.Set<Character> used = usedSymbols(pattern);
+        java.util.Set<Character> present = new java.util.HashSet<>();
         for (RecipeKey recipeKey : def.keys()) {
             char symbol = recipeKey.symbol();
             if (!used.contains(symbol)) {
                 continue;
             }
             RecipeInput input = recipeKey.input();
-            JsonObject ingredient = ingredientJson(input, reporter, def.sourceLoc());
+            JsonObject ingredient = ingredientJson(input, reporter, def.sourceLoc(), knownItemCache);
             if (ingredient != null) {
                 key.add(String.valueOf(symbol), ingredient);
+                present.add(symbol);
             }
+        }
+        if (!present.containsAll(used)) {
+            if (reporter != null) {
+                String missing = used.stream()
+                    .filter(symbol -> !present.contains(symbol))
+                    .map(String::valueOf)
+                    .sorted()
+                    .reduce((a, b) -> a + "," + b)
+                    .orElse("?");
+                reporter.warnOnce("LegacyRecipePattern", "pattern references undefined key(s): " + missing, def.sourceLoc());
+            }
+            return null;
         }
         root.add("key", key);
         root.add("result", resultJson(outputId, def.outputCount(), def.outputNbt(), reporter, def.sourceLoc()));
         return root;
     }
 
-    private static JsonObject buildShapeless(ShapelessRecipeDef def, LegacyWarnReporter reporter) {
-        String outputId = normalizeRecipeItem(def.outputId(), def.outputMeta(), reporter, def.sourceLoc());
+    private static JsonObject buildShapeless(ShapelessRecipeDef def, LegacyWarnReporter reporter, Map<String, String> knownItemCache) {
+        String outputId = normalizeRecipeItem(def.outputId(), def.outputMeta(), reporter, def.sourceLoc(), knownItemCache);
         if (outputId == null) {
             return null;
         }
@@ -117,17 +306,23 @@ public abstract class RecipeManagerMixin {
         }
         JsonArray ingredients = new JsonArray();
         for (RecipeInput input : def.inputs()) {
-            JsonObject ingredient = ingredientJson(input, reporter, def.sourceLoc());
+            JsonObject ingredient = ingredientJson(input, reporter, def.sourceLoc(), knownItemCache);
             if (ingredient != null) {
                 ingredients.add(ingredient);
             }
+        }
+        if (ingredients.size() == 0) {
+            if (reporter != null) {
+                reporter.warnOnce("LegacyRecipe", "dropped shapeless recipe with no valid ingredients", def.sourceLoc());
+            }
+            return null;
         }
         root.add("ingredients", ingredients);
         root.add("result", resultJson(outputId, def.outputCount(), def.outputNbt(), reporter, def.sourceLoc()));
         return root;
     }
 
-    private static JsonObject ingredientJson(RecipeInput input, LegacyWarnReporter reporter, SourceLoc loc) {
+    private static JsonObject ingredientJson(RecipeInput input, LegacyWarnReporter reporter, SourceLoc loc, Map<String, String> knownItemCache) {
         if (input == null) {
             return null;
         }
@@ -146,7 +341,7 @@ public abstract class RecipeManagerMixin {
             obj.addProperty("tag", tag);
             return obj;
         }
-        String id = normalizeRecipeItem(input.itemId(), input.meta(), reporter, loc);
+        String id = normalizeRecipeItem(input.itemId(), input.meta(), reporter, loc, knownItemCache);
         if (id == null) {
             return null;
         }
@@ -166,7 +361,7 @@ public abstract class RecipeManagerMixin {
         return result;
     }
 
-    private static String normalizeRecipeItem(String rawId, int meta, LegacyWarnReporter reporter, SourceLoc loc) {
+    private static String normalizeRecipeItem(String rawId, int meta, LegacyWarnReporter reporter, SourceLoc loc, Map<String, String> knownItemCache) {
         if (rawId == null || rawId.isEmpty()) {
             return null;
         }
@@ -184,7 +379,17 @@ public abstract class RecipeManagerMixin {
                 return dye;
             }
         }
-        return normalized;
+        String resolved = resolveKnownRecipeItem(normalized, knownItemCache);
+        if (resolved != null) {
+            if (!resolved.equals(normalized) && reporter != null) {
+                reporter.warnOnce("LegacyRecipeItem", "fuzzy-mapped recipe item " + normalized + " -> " + resolved, loc);
+            }
+            return resolved;
+        }
+        if (reporter != null) {
+            reporter.warnOnce("LegacyRecipeItem", "missing recipe item " + normalized + " (recipe dropped)", loc);
+        }
+        return null;
     }
 
     private static String mapWoolMeta(String id, int meta) {
@@ -346,6 +551,57 @@ public abstract class RecipeManagerMixin {
             reporter.warnOnce("LegacyRecipePattern", "trimmed trailing empty pattern rows", loc);
         }
         return new ArrayList<>(rows.subList(0, end));
+    }
+
+    private static List<String> trimPatternToGrid(List<String> rows, LegacyWarnReporter reporter, SourceLoc loc) {
+        if (rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        if (rows.size() <= 3) {
+            return rows;
+        }
+        if (reporter != null) {
+            reporter.warnOnce("LegacyRecipePattern", "trimmed pattern rows to 3x3 grid", loc);
+        }
+        return new ArrayList<>(rows.subList(0, 3));
+    }
+
+    private static String resolveKnownRecipeItem(String id, Map<String, String> knownItemCache) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        if (knownItemCache != null && knownItemCache.containsKey(id)) {
+            String cached = knownItemCache.get(id);
+            return cached == null || cached.isBlank() ? null : cached;
+        }
+        Identifier parsed = Identifier.tryParse(id);
+        if (parsed == null) {
+            return null;
+        }
+        if (Registry.ITEM.containsId(parsed)) {
+            String direct = parsed.toString();
+            if (knownItemCache != null) {
+                knownItemCache.put(id, direct);
+            }
+            return direct;
+        }
+        String target = fuzzyKey(parsed.getPath());
+        for (Identifier candidate : Registry.ITEM.getIds()) {
+            if (!candidate.getNamespace().equals(parsed.getNamespace())) {
+                continue;
+            }
+            if (fuzzyKey(candidate.getPath()).equals(target)) {
+                String resolved = candidate.toString();
+                if (knownItemCache != null) {
+                    knownItemCache.put(id, resolved);
+                }
+                return resolved;
+            }
+        }
+        if (knownItemCache != null) {
+            knownItemCache.put(id, "");
+        }
+        return null;
     }
 
     private static Identifier buildId(String outputId, String kind, SourceLoc loc, int index) {

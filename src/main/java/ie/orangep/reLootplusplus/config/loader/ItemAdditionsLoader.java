@@ -57,7 +57,8 @@ public final class ItemAdditionsLoader {
                 }
             }
         }
-        Log.LOGGER.info(
+        Log.info(
+            "Loader",
             "Loaded item additions: generic={}, materials={}, swords={}, tools={}, armor={}, foods={}, bows={}, guns={}, multitools={}",
             additions.genericItems().size(),
             additions.materials().size(),

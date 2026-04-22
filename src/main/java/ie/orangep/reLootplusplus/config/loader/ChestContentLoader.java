@@ -45,7 +45,7 @@ public final class ChestContentLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} chest amount rules", rules.size());
+        Log.info("Loader", "Loaded {} chest amount rules", rules.size());
         return rules;
     }
 
@@ -70,7 +70,7 @@ public final class ChestContentLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} chest loot rules", rules.size());
+        Log.info("Loader", "Loaded {} chest loot rules", rules.size());
         return rules;
     }
 

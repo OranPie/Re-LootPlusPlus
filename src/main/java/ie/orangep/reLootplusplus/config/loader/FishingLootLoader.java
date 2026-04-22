@@ -48,7 +48,7 @@ public final class FishingLootLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} fishing loot rules", rules.size());
+        Log.info("Loader", "Loaded {} fishing loot rules", rules.size());
         return rules;
     }
 

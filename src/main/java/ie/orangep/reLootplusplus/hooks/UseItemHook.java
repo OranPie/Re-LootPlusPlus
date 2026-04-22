@@ -67,7 +67,7 @@ public final class UseItemHook {
         }
         var lootTable = chestTypeMapper.resolve(chestType, null);
         if (lootTable == null) {
-            Log.warn("[LootPP-Legacy] LootChest unknown type {}", chestType);
+            Log.warn("Legacy", "LootChest unknown type {}", chestType);
             return TypedActionResult.pass(stack);
         }
         BlockHitResult hit = raycast(player);

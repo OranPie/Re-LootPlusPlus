@@ -45,7 +45,7 @@ public final class ThrownLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} thrown definitions", defs.size());
+        Log.info("Loader", "Loaded {} thrown definitions", defs.size());
         return defs;
     }
 

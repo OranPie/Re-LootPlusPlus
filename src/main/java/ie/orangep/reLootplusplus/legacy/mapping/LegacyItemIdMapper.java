@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
+import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 
 import java.util.Locale;
@@ -39,7 +40,7 @@ public final class LegacyItemIdMapper {
             metaPart = lowered.substring("dye:".length());
         }
         if (metaPart == null) {
-            return raw;
+            return CustomRemapStore.map(raw, warnReporter, null, "item");
         }
         int meta;
         try {
@@ -54,7 +55,7 @@ public final class LegacyItemIdMapper {
         }
         String mapped = "minecraft:" + DYE_MAP[meta];
         warn(warnReporter, "LegacyItemId", "mapped recipe item " + raw + " -> " + mapped);
-        return mapped;
+        return CustomRemapStore.map(mapped, warnReporter, null, "item");
     }
 
     private static void warn(LegacyWarnReporter warnReporter, String type, String detail) {

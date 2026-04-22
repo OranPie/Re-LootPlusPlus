@@ -4,6 +4,7 @@ import ie.orangep.reLootplusplus.config.model.general.CreativeMenuEntry;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
 import net.fabricmc.fabric.api.client.itemgroup.FabricItemGroupBuilder;
+import net.minecraft.client.resource.language.I18n;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
@@ -35,7 +36,7 @@ public final class CreativeMenuRegistrar {
                 .icon(() -> icon)
                 .appendItems(stacks -> appendItems(stacks, items))
                 .build();
-            Log.LOGGER.info("Registered creative tab {} ({})", category, group.getName());
+            Log.info("Registry", "Registered creative tab {} ({})", category, group.getName());
         }
     }
 
@@ -64,7 +65,7 @@ public final class CreativeMenuRegistrar {
         }
         Identifier id = Identifier.tryParse(entry.itemId());
         if (id == null || !Registry.ITEM.containsId(id)) {
-            Log.warn("[LootPP-Legacy] Creative menu missing item {}", entry.itemId());
+            Log.warn("Legacy", "Creative menu missing item {}", entry.itemId());
             return ItemStack.EMPTY;
         }
         Item item = Registry.ITEM.get(id);
@@ -81,6 +82,9 @@ public final class CreativeMenuRegistrar {
         }
         if (nbt != null) {
             stack.setNbt(nbt);
+        }
+        if (shouldApplyFallbackName(id, stack)) {
+            stack.setCustomName(new net.minecraft.text.LiteralText(fallbackName(id)));
         }
         return stack;
     }
@@ -99,6 +103,42 @@ public final class CreativeMenuRegistrar {
                 out.append('_');
             } else {
                 out.append('_');
+            }
+        }
+        return out.toString();
+    }
+
+    private boolean shouldApplyFallbackName(Identifier id, ItemStack stack) {
+        if (id == null || stack == null || stack.isEmpty()) {
+            return false;
+        }
+        String key = stack.getTranslationKey();
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+        if (I18n.hasTranslation(key)) {
+            return false;
+        }
+        return "lucky".equals(id.getNamespace());
+    }
+
+    private String fallbackName(Identifier id) {
+        String path = id.getPath();
+        if (path == null || path.isBlank()) {
+            return id.toString();
+        }
+        String[] parts = path.replace('.', ' ').replace('_', ' ').replace('-', ' ').trim().split("\\s+");
+        StringBuilder out = new StringBuilder(path.length());
+        for (String part : parts) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append(' ');
+            }
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                out.append(part.substring(1));
             }
         }
         return out.toString();

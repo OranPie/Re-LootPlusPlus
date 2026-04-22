@@ -1,5 +1,7 @@
 package ie.orangep.reLootplusplus.resourcepack;
 
+import ie.orangep.reLootplusplus.config.CustomRemapStore;
+import ie.orangep.reLootplusplus.config.TextureAdditionStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.runtime.RuntimeState;
@@ -21,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +52,11 @@ public final class LegacyResourcePackPatcher {
         TEXTURE_REMAP.put("block/log_jungle", "block/jungle_log");
         TEXTURE_REMAP.put("block/log_acacia", "block/acacia_log");
         TEXTURE_REMAP.put("block/log_big_oak", "block/dark_oak_log");
+        TEXTURE_REMAP.put("block/door_iron_lower", "block/iron_door_bottom");
+        TEXTURE_REMAP.put("block/door_iron_upper", "block/iron_door_top");
+        TEXTURE_REMAP.put("block/quartz_block_lines", "block/quartz_block_side");
+        TEXTURE_REMAP.put("block/anvil_base", "block/anvil");
+        TEXTURE_REMAP.put("block/anvil_top_damaged_2", "block/anvil_top_damaged_2");
     }
 
     private LegacyResourcePackPatcher() {
@@ -127,6 +135,15 @@ public final class LegacyResourcePackPatcher {
         if (delegate.contains(type, id)) {
             return true;
         }
+        if (!containsNamespace(delegate, type, id.getNamespace())) {
+            return false;
+        }
+        if (canSynthesizeBlockstate(delegate, type, id)) {
+            return true;
+        }
+        if (canSynthesizeModel(delegate, type, id)) {
+            return true;
+        }
         if (hasLegacyTexture(delegate, type, id)) {
             return true;
         }
@@ -166,7 +183,7 @@ public final class LegacyResourcePackPatcher {
             Identifier legacyId = new Identifier(id.getNamespace(), candidate);
             if (delegate.contains(type, legacyId)) {
                 try (InputStream legacyStream = delegate.open(type, legacyId)) {
-                    String json = convertLegacyLang(legacyStream);
+                    String json = convertLegacyLang(legacyStream, id.getNamespace());
                     warnOnce("LegacyLang", "converted " + legacyId + " -> " + id + " in " + packName);
                     return new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
                 }
@@ -181,7 +198,25 @@ public final class LegacyResourcePackPatcher {
             return null;
         }
         if (!delegate.contains(type, id)) {
-            return null;
+            String stem = path.substring("blockstates/".length(), path.length() - ".json".length());
+            Identifier modelId = Identifier.tryParse(id.getNamespace() + ":models/block/" + stem + ".json");
+            if (modelId == null || !delegate.contains(type, modelId)) {
+                modelId = findClosestResource(delegate, type, id.getNamespace(), "models/block", stem + ".json");
+            }
+            if (modelId == null) {
+                Identifier syntheticModel = Identifier.tryParse(id.getNamespace() + ":models/block/" + stem + ".json");
+                if (syntheticModel != null && canSynthesizeModel(delegate, type, syntheticModel)) {
+                    modelId = syntheticModel;
+                }
+            }
+            if (modelId == null) {
+                return null;
+            }
+            String modelRef = modelId.getNamespace() + ":" + modelId.getPath()
+                .substring("models/".length(), modelId.getPath().length() - ".json".length());
+            String json = generateSimpleBlockstate(modelRef);
+            warnOnce("LegacyBlockstate", "generated blockstate for " + id + " from " + modelId + " in " + packName);
+            return new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
         }
         try (InputStream original = delegate.open(type, id)) {
             byte[] data = original.readAllBytes();
@@ -220,50 +255,45 @@ public final class LegacyResourcePackPatcher {
         if (!path.startsWith("models/") || !path.endsWith(".json")) {
             return null;
         }
+        boolean isItemModel = path.startsWith("models/item/");
+        String modelRef = id.getNamespace() + ":" + path.substring("models/".length(), path.length() - ".json".length());
+        TextureAdditionStore additions = TextureAdditionStore.load();
+        String generated = additions.generatedModelTexture(modelRef);
+        if (generated != null) {
+            String json = generateItemModel(additions.mapTextureRef(generated));
+            warnOnce("TextureAdditions", "generated model for " + modelRef + " in " + packName);
+            return new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
+        }
+        String remappedModel = additions.mapModelRef(modelRef);
+        if (remappedModel != null && !remappedModel.equals(modelRef)) {
+            Identifier target = toModelResourceId(remappedModel);
+            if (target != null && delegate.contains(type, target)) {
+                warnOnce("TextureAdditions", "mapped model " + modelRef + " -> " + remappedModel + " in " + packName);
+                return openAndPatchModel(delegate, type, target, packName);
+            }
+        }
         if (!delegate.contains(type, id)) {
-            return null;
+            Identifier closest = findClosestResource(delegate, type, id.getNamespace(), isItemModel ? "models/item" : "models/block",
+                path.substring(path.lastIndexOf('/') + 1));
+            if (closest != null) {
+                warnOnce("LegacyModel", "mapped missing model " + id + " -> " + closest + " in " + packName);
+                return openAndPatchModel(delegate, type, closest, packName);
+            }
+            if (isItemModel) {
+                String itemStem = path.substring("models/item/".length(), path.length() - ".json".length());
+                Identifier textureId = findFallbackItemTexture(delegate, type, id.getNamespace(), itemStem);
+                String textureRef = textureId == null
+                    ? "minecraft:item/barrier"
+                    : textureId.getNamespace() + ":" + textureId.getPath()
+                        .substring("textures/".length(), textureId.getPath().length() - ".png".length());
+                warnOnce("LegacyModel", "generated fallback item model for " + id + " -> " + textureRef + " in " + packName);
+                return new ByteArrayInputStream(generateItemModel(textureRef).getBytes(StandardCharsets.UTF_8));
+            }
+            String blockTexture = "minecraft:block/stone";
+            warnOnce("LegacyModel", "generated fallback block model for " + id + " -> " + blockTexture + " in " + packName);
+            return new ByteArrayInputStream(generateCubeAllBlockModel(blockTexture).getBytes(StandardCharsets.UTF_8));
         }
-        try (InputStream original = delegate.open(type, id)) {
-            byte[] data = original.readAllBytes();
-            JsonElement parsed = parseJsonOrNull(data);
-            if (parsed == null || !parsed.isJsonObject()) {
-                return new ByteArrayInputStream(data);
-            }
-            JsonObject obj = parsed.getAsJsonObject();
-            boolean changed = false;
-            if (obj.has("parent") && obj.get("parent").isJsonPrimitive()) {
-                String parent = obj.get("parent").getAsString();
-                String patched = patchModelRef(parent);
-                if (!patched.equals(parent)) {
-                    obj.addProperty("parent", patched);
-                    warnOnce("LegacyModel", "prefixed parent " + parent + " -> " + patched + " in " + packName + ":" + id);
-                    changed = true;
-                }
-            }
-            if (obj.has("textures") && obj.get("textures").isJsonObject()) {
-                JsonObject textures = obj.getAsJsonObject("textures");
-                for (Map.Entry<String, JsonElement> entry : textures.entrySet()) {
-                    if (!entry.getValue().isJsonPrimitive()) {
-                        continue;
-                    }
-                    String value = entry.getValue().getAsString();
-                    if (value.startsWith("#")) {
-                        continue;
-                    }
-                    String patched = patchTextureRef(value);
-                    if (!patched.equals(value)) {
-                        textures.addProperty(entry.getKey(), patched);
-                        warnOnce("LegacyTexture", "mapped texture " + value + " -> " + patched + " in " + packName + ":" + id);
-                        changed = true;
-                    }
-                }
-            }
-            if (!changed) {
-                return new ByteArrayInputStream(data);
-            }
-            String patchedJson = GSON.toJson(obj);
-            return new ByteArrayInputStream(patchedJson.getBytes(StandardCharsets.UTF_8));
-        }
+        return openAndPatchModel(delegate, type, id, packName);
     }
 
     private static InputStream tryOpenLegacyTexture(ResourcePack delegate, ResourceType type, Identifier id, String packName) throws IOException {
@@ -276,7 +306,12 @@ public final class LegacyResourcePackPatcher {
         }
         Identifier legacy = mapLegacyTextureId(id);
         if (legacy == null || !delegate.contains(type, legacy)) {
-            return null;
+            Identifier closest = findClosestTextureResource(delegate, type, id);
+            if (closest == null) {
+                return null;
+            }
+            warnOnce("LegacyTexture", "mapped texture path " + id + " -> " + closest + " in " + packName);
+            return delegate.open(type, closest);
         }
         warnOnce("LegacyTexture", "mapped texture path " + id + " -> " + legacy + " in " + packName);
         return delegate.open(type, legacy);
@@ -291,10 +326,10 @@ public final class LegacyResourcePackPatcher {
             return true;
         }
         Identifier legacy = mapLegacyTextureId(id);
-        if (legacy == null) {
-            return false;
+        if (legacy != null && delegate.contains(type, legacy)) {
+            return true;
         }
-        return delegate.contains(type, legacy);
+        return findClosestTextureResource(delegate, type, id) != null;
     }
 
     private static InputStream tryOpenCaseInsensitive(ResourcePack delegate, ResourceType type, Identifier id, String packName) throws IOException {
@@ -352,6 +387,41 @@ public final class LegacyResourcePackPatcher {
             return null;
         }
         return new Identifier(id.getNamespace(), alt);
+    }
+
+    private static Identifier findClosestTextureResource(ResourcePack delegate, ResourceType type, Identifier id) {
+        if (id == null) {
+            return null;
+        }
+        String path = id.getPath();
+        if (path == null || !path.startsWith("textures/")) {
+            return null;
+        }
+        int slash = path.lastIndexOf('/');
+        if (slash < 0 || slash >= path.length() - 1) {
+            return null;
+        }
+        String file = path.substring(slash + 1);
+        List<String> prefixes = new ArrayList<>();
+        if (path.startsWith("textures/item/") || path.startsWith("textures/items/")) {
+            prefixes.add("textures/item");
+            prefixes.add("textures/items");
+        } else if (path.startsWith("textures/block/") || path.startsWith("textures/blocks/")) {
+            prefixes.add("textures/block");
+            prefixes.add("textures/blocks");
+        } else {
+            prefixes.add("textures/item");
+            prefixes.add("textures/items");
+            prefixes.add("textures/block");
+            prefixes.add("textures/blocks");
+        }
+        for (String prefix : prefixes) {
+            Identifier closest = findClosestResource(delegate, type, id.getNamespace(), prefix, file);
+            if (closest != null) {
+                return closest;
+            }
+        }
+        return null;
     }
 
     private static InputStream tryPatchLegacySounds(ResourcePack delegate, ResourceType type, Identifier id, String packName) throws IOException {
@@ -547,34 +617,34 @@ public final class LegacyResourcePackPatcher {
         if (model == null || model.isEmpty()) {
             return model;
         }
-        if (model.startsWith("block/") || model.startsWith("item/") || model.startsWith("builtin/")) {
-            return model;
+        String custom = CustomRemapStore.map(model);
+        if (custom != null && !custom.equals(model)) {
+            return custom;
         }
+        String namespace = null;
+        String path = model;
         int colon = model.indexOf(':');
         if (colon >= 0) {
-            String ns = model.substring(0, colon);
-            String path = model.substring(colon + 1);
-            if (path.startsWith("block/") || path.startsWith("item/") || path.startsWith("builtin/") || path.contains("/")) {
-                return model;
+            namespace = normalizeNamespace(model.substring(0, colon));
+            path = model.substring(colon + 1);
+        }
+        String normalized = path.replace('\\', '/').toLowerCase(Locale.ROOT);
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.startsWith("blocks/")) {
+            normalized = "block/" + normalized.substring("blocks/".length());
+        } else if (normalized.startsWith("items/")) {
+            normalized = "item/" + normalized.substring("items/".length());
+        } else if (!normalized.startsWith("block/") && !normalized.startsWith("item/") && !normalized.startsWith("builtin/")) {
+            if (!normalized.contains("/")) {
+                normalized = "block/" + normalized;
             }
-            if (path.startsWith("blocks/")) {
-                return ns + ":block/" + path.substring("blocks/".length());
-            }
-            if (path.startsWith("items/")) {
-                return ns + ":item/" + path.substring("items/".length());
-            }
-            return ns + ":block/" + path;
         }
-        if (model.startsWith("blocks/")) {
-            return "block/" + model.substring("blocks/".length());
+        if (namespace != null) {
+            return namespace + ":" + normalized;
         }
-        if (model.startsWith("items/")) {
-            return "item/" + model.substring("items/".length());
-        }
-        if (model.contains("/")) {
-            return model;
-        }
-        return "block/" + model;
+        return normalized;
     }
 
     private static String patchTextureRef(String texture) {
@@ -584,6 +654,14 @@ public final class LegacyResourcePackPatcher {
         if (texture.startsWith("#")) {
             return texture;
         }
+        String custom = CustomRemapStore.map(texture);
+        if (custom != null && !custom.equals(texture)) {
+            return custom;
+        }
+        String additions = TextureAdditionStore.load().mapTextureRef(texture);
+        if (additions != null && !additions.equals(texture)) {
+            return additions;
+        }
         String namespace = null;
         String path = texture;
         int colon = texture.indexOf(':');
@@ -591,25 +669,443 @@ public final class LegacyResourcePackPatcher {
             namespace = texture.substring(0, colon);
             path = texture.substring(colon + 1);
         }
-        String normalized = normalizeTexturePath(path);
-        if (namespace != null) {
-            return namespace + ":" + normalized;
+        String normalizedNamespace = namespace == null ? null : normalizeNamespace(namespace);
+        String normalizedPath = normalizeTexturePath(path);
+        if (normalizedNamespace != null) {
+            return normalizedNamespace + ":" + normalizedPath;
         }
-        return normalized;
+        return normalizedPath;
     }
 
     private static String normalizeTexturePath(String path) {
-        String normalized = path;
+        String normalized = path == null ? "" : path;
+        normalized = normalized.replace('\\', '/');
+        normalized = normalizeTextureSegment(normalized);
+        normalized = normalized.toLowerCase(Locale.ROOT);
         if (normalized.startsWith("blocks/")) {
             normalized = "block/" + normalized.substring("blocks/".length());
         } else if (normalized.startsWith("items/")) {
             normalized = "item/" + normalized.substring("items/".length());
         }
+        normalized = sanitizePath(normalized);
         String remapped = TEXTURE_REMAP.get(normalized);
         if (remapped != null) {
             return remapped;
         }
         return normalized;
+    }
+
+    private static String normalizeNamespace(String namespace) {
+        String lower = namespace.toLowerCase(Locale.ROOT);
+        StringBuilder out = new StringBuilder(lower.length());
+        for (int i = 0; i < lower.length(); i++) {
+            char c = lower.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+                out.append(c);
+            } else {
+                out.append('_');
+            }
+        }
+        return out.toString();
+    }
+
+    private static String resolveTextureNamespace(ResourcePack delegate, Identifier modelId, String textureRef) {
+        if (textureRef == null || textureRef.isBlank()) {
+            return textureRef;
+        }
+        int colon = textureRef.indexOf(':');
+        if (colon <= 0) {
+            return textureRef;
+        }
+        String namespace = textureRef.substring(0, colon);
+        String path = textureRef.substring(colon + 1);
+        if (!"minecraft".equals(namespace)) {
+            return textureRef;
+        }
+        Identifier textureId = toTextureId(namespace, path);
+        if (textureId != null && delegate.contains(ResourceType.CLIENT_RESOURCES, textureId)) {
+            return textureRef;
+        }
+        String modelNamespace = modelId == null ? null : modelId.getNamespace();
+        if (modelNamespace == null || modelNamespace.isBlank() || "minecraft".equals(modelNamespace)) {
+            return textureRef;
+        }
+        Identifier altId = toTextureId(modelNamespace, path);
+        if (altId != null && delegate.contains(ResourceType.CLIENT_RESOURCES, altId)) {
+            return modelNamespace + ":" + path;
+        }
+        return textureRef;
+    }
+
+    private static String resolveClosestTextureRef(ResourcePack delegate, Identifier modelId, String textureRef) {
+        if (textureRef == null || textureRef.isBlank()) {
+            return textureRef;
+        }
+        int colon = textureRef.indexOf(':');
+        if (colon <= 0 || colon >= textureRef.length() - 1) {
+            return textureRef;
+        }
+        String namespace = textureRef.substring(0, colon);
+        String path = textureRef.substring(colon + 1);
+        Identifier direct = toTextureId(namespace, path);
+        if (direct != null && delegate.contains(ResourceType.CLIENT_RESOURCES, direct)) {
+            return textureRef;
+        }
+        String file = path.substring(path.lastIndexOf('/') + 1) + ".png";
+        List<String> prefixes = texturePrefixesForPath(path);
+        for (String prefix : prefixes) {
+            Identifier closest = findClosestResource(delegate, ResourceType.CLIENT_RESOURCES, namespace, prefix, file);
+            if (closest != null) {
+                return closest.getNamespace() + ":" + closest.getPath()
+                    .substring("textures/".length(), closest.getPath().length() - ".png".length());
+            }
+        }
+        String modelNs = modelId == null ? null : modelId.getNamespace();
+        if (modelNs != null && !modelNs.equals(namespace)) {
+            for (String prefix : prefixes) {
+                Identifier closest = findClosestResource(delegate, ResourceType.CLIENT_RESOURCES, modelNs, prefix, file);
+                if (closest != null) {
+                    return closest.getNamespace() + ":" + closest.getPath()
+                        .substring("textures/".length(), closest.getPath().length() - ".png".length());
+                }
+            }
+        }
+        return textureRef;
+    }
+
+    private static List<String> texturePrefixesForPath(String path) {
+        if (path.startsWith("item/") || path.startsWith("items/")) {
+            return List.of("textures/item", "textures/items");
+        }
+        if (path.startsWith("block/") || path.startsWith("blocks/")) {
+            return List.of("textures/block", "textures/blocks");
+        }
+        return List.of("textures/item", "textures/items", "textures/block", "textures/blocks");
+    }
+
+    private static String fallbackMissingTextureRef(ResourcePack delegate, String textureRef) {
+        if (textureRef == null || textureRef.isBlank()) {
+            return textureRef;
+        }
+        int colon = textureRef.indexOf(':');
+        if (colon <= 0 || colon >= textureRef.length() - 1) {
+            return textureRef;
+        }
+        String namespace = textureRef.substring(0, colon);
+        String path = textureRef.substring(colon + 1);
+        Identifier direct = toTextureId(namespace, path);
+        if (direct != null && delegate.contains(ResourceType.CLIENT_RESOURCES, direct)) {
+            return textureRef;
+        }
+        if (path.startsWith("block/") || path.startsWith("blocks/")) {
+            return "minecraft:block/stone";
+        }
+        return "minecraft:item/barrier";
+    }
+
+    private static Identifier toTextureId(String namespace, String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String clean = path.startsWith("/") ? path.substring(1) : path;
+        String texPath = "textures/" + clean + ".png";
+        return Identifier.tryParse(namespace + ":" + texPath);
+    }
+
+    private static String sanitizePath(String path) {
+        StringBuilder out = new StringBuilder(path.length());
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '/' || c == '.' || c == '_' || c == '-') {
+                out.append(c);
+            } else {
+                out.append('_');
+            }
+        }
+        return out.toString();
+    }
+
+    private static String normalizeTextureSegment(String path) {
+        int slash = path.lastIndexOf('/');
+        if (slash < 0 || slash >= path.length() - 1) {
+            return toSnakeCase(path);
+        }
+        String prefix = path.substring(0, slash + 1);
+        String segment = path.substring(slash + 1);
+        return prefix + toSnakeCase(segment);
+    }
+
+    private static String toSnakeCase(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length() + 4);
+        char prev = 0;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (Character.isUpperCase(c)) {
+                if (i > 0 && (Character.isLowerCase(prev) || Character.isDigit(prev))) {
+                    out.append('_');
+                }
+                out.append(Character.toLowerCase(c));
+            } else {
+                out.append(c);
+            }
+            prev = c;
+        }
+        return out.toString();
+    }
+
+    private static String generateItemModel(String textureRef) {
+        String value = textureRef == null ? "" : textureRef;
+        JsonObject obj = new JsonObject();
+        obj.addProperty("parent", "item/generated");
+        JsonObject textures = new JsonObject();
+        textures.addProperty("layer0", value);
+        obj.add("textures", textures);
+        return GSON.toJson(obj);
+    }
+
+    private static String generateCubeAllBlockModel(String textureRef) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("parent", "minecraft:block/cube_all");
+        JsonObject textures = new JsonObject();
+        textures.addProperty("all", textureRef == null ? "minecraft:block/stone" : textureRef);
+        obj.add("textures", textures);
+        return GSON.toJson(obj);
+    }
+
+    private static InputStream openAndPatchModel(ResourcePack delegate, ResourceType type, Identifier id, String packName) throws IOException {
+        try (InputStream original = delegate.open(type, id)) {
+            byte[] data = original.readAllBytes();
+            return patchModelJson(delegate, id, packName, data);
+        }
+    }
+
+    private static InputStream patchModelJson(ResourcePack delegate, Identifier id, String packName, byte[] data) {
+        JsonElement parsed = parseJsonOrNull(data);
+        if (parsed == null || !parsed.isJsonObject()) {
+            return new ByteArrayInputStream(data);
+        }
+        JsonObject obj = parsed.getAsJsonObject();
+        boolean changed = false;
+        if (obj.has("parent") && obj.get("parent").isJsonPrimitive()) {
+            String parent = obj.get("parent").getAsString();
+            String patched = patchModelRef(parent);
+            if (!patched.equals(parent)) {
+                obj.addProperty("parent", patched);
+                warnOnce("LegacyModel", "prefixed parent " + parent + " -> " + patched + " in " + packName + ":" + id);
+                changed = true;
+            }
+        }
+        if (obj.has("textures") && obj.get("textures").isJsonObject()) {
+            JsonObject textures = obj.getAsJsonObject("textures");
+            for (Map.Entry<String, JsonElement> entry : textures.entrySet()) {
+                if (!entry.getValue().isJsonPrimitive()) {
+                    continue;
+                }
+                String value = entry.getValue().getAsString();
+                if (value.startsWith("#")) {
+                    continue;
+                }
+                String patched = patchTextureRef(value);
+                String resolved = resolveTextureNamespace(delegate, id, patched);
+                resolved = resolveClosestTextureRef(delegate, id, resolved);
+                resolved = fallbackMissingTextureRef(delegate, resolved);
+                if (!resolved.equals(value)) {
+                    textures.addProperty(entry.getKey(), resolved);
+                    warnOnce("LegacyTexture", "mapped texture " + value + " -> " + resolved + " in " + packName + ":" + id);
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) {
+            return new ByteArrayInputStream(data);
+        }
+        String patchedJson = GSON.toJson(obj);
+        return new ByteArrayInputStream(patchedJson.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static Identifier findFallbackItemTexture(ResourcePack delegate, ResourceType type, String namespace, String modelStem) {
+        String file = modelStem + ".png";
+        Identifier directItem = Identifier.tryParse(namespace + ":textures/item/" + file);
+        if (directItem != null && delegate.contains(type, directItem)) {
+            return directItem;
+        }
+        Identifier directItems = Identifier.tryParse(namespace + ":textures/items/" + file);
+        if (directItems != null && delegate.contains(type, directItems)) {
+            return directItems;
+        }
+        Identifier closest = findClosestResource(delegate, type, namespace, "textures/item", file);
+        if (closest != null) {
+            return closest;
+        }
+        return findClosestResource(delegate, type, namespace, "textures/items", file);
+    }
+
+    private static Identifier findClosestResource(ResourcePack delegate, ResourceType type, String namespace, String prefix, String requestedFile) {
+        Collection<Identifier> resources = delegate.findResources(type, namespace, prefix, 48, p -> p.endsWith(".json") || p.endsWith(".png"));
+        if (resources.isEmpty()) {
+            return null;
+        }
+        String req = requestedFile.toLowerCase(Locale.ROOT);
+        String reqStem = stripExtension(req);
+        String reqNorm = normalizeComparableStem(reqStem);
+        Identifier best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (Identifier candidate : resources) {
+            String candidatePath = candidate.getPath();
+            int slash = candidatePath.lastIndexOf('/');
+            if (slash < 0 || slash >= candidatePath.length() - 1) {
+                continue;
+            }
+            String file = candidatePath.substring(slash + 1).toLowerCase(Locale.ROOT);
+            int score = scoreFileMatch(file, req, reqStem, reqNorm);
+            if (score <= Integer.MIN_VALUE / 2) {
+                continue;
+            }
+            if (best == null || score > bestScore || (score == bestScore
+                && Comparator.<String>naturalOrder().compare(candidatePath, best.getPath()) < 0)) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+
+    private static int scoreFileMatch(String candidateFile, String reqFile, String reqStem, String reqNorm) {
+        String candidateStem = stripExtension(candidateFile);
+        String candidateNorm = normalizeComparableStem(candidateStem);
+        if (candidateFile.equals(reqFile)) {
+            return 120;
+        }
+        if (candidateStem.equals(reqStem)) {
+            return 110;
+        }
+        if (candidateStem.endsWith("." + reqStem) || candidateStem.endsWith("_" + reqStem) || candidateStem.endsWith("-" + reqStem)) {
+            return 100;
+        }
+        if (candidateNorm.equals(reqNorm)) {
+            return 90;
+        }
+        if (!reqNorm.isEmpty() && candidateNorm.endsWith(reqNorm)) {
+            return 80;
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private static String stripExtension(String file) {
+        int dot = file.lastIndexOf('.');
+        if (dot <= 0) {
+            return file;
+        }
+        return file.substring(0, dot);
+    }
+
+    private static String normalizeComparableStem(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        StringBuilder out = new StringBuilder(lower.length());
+        for (int i = 0; i < lower.length(); i++) {
+            char c = lower.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    private static String generateSimpleBlockstate(String modelRef) {
+        JsonObject obj = new JsonObject();
+        JsonObject variants = new JsonObject();
+        JsonObject normal = new JsonObject();
+        normal.addProperty("model", modelRef);
+        variants.add("", normal);
+        obj.add("variants", variants);
+        return GSON.toJson(obj);
+    }
+
+    private static boolean canSynthesizeBlockstate(ResourcePack delegate, ResourceType type, Identifier id) {
+        if ("minecraft".equals(id.getNamespace())) {
+            return false;
+        }
+        String path = id.getPath();
+        if (!path.startsWith("blockstates/") || !path.endsWith(".json")) {
+            return false;
+        }
+        String stem = path.substring("blockstates/".length(), path.length() - ".json".length());
+        Identifier directModel = Identifier.tryParse(id.getNamespace() + ":models/block/" + stem + ".json");
+        if (directModel != null && delegate.contains(type, directModel)) {
+            return true;
+        }
+        if (findClosestResource(delegate, type, id.getNamespace(), "models/block", stem + ".json") != null) {
+            return true;
+        }
+        return directModel != null && canSynthesizeModel(delegate, type, directModel);
+    }
+
+    private static boolean canSynthesizeModel(ResourcePack delegate, ResourceType type, Identifier id) {
+        if ("minecraft".equals(id.getNamespace())) {
+            return false;
+        }
+        String path = id.getPath();
+        if (!path.startsWith("models/") || !path.endsWith(".json")) {
+            return false;
+        }
+        String modelRef = id.getNamespace() + ":" + path.substring("models/".length(), path.length() - ".json".length());
+        TextureAdditionStore additions = TextureAdditionStore.load();
+        if (additions.generatedModelTexture(modelRef) != null) {
+            return true;
+        }
+        String remappedModel = additions.mapModelRef(modelRef);
+        if (remappedModel != null && !remappedModel.equals(modelRef)) {
+            Identifier target = toModelResourceId(remappedModel);
+            if (target != null && delegate.contains(type, target)) {
+                return true;
+            }
+        }
+        boolean isItem = path.startsWith("models/item/");
+        String prefix = isItem ? "models/item" : "models/block";
+        String requested = path.substring(path.lastIndexOf('/') + 1);
+        Identifier closest = findClosestResource(delegate, type, id.getNamespace(), prefix, requested);
+        if (closest != null) {
+            return true;
+        }
+        if (!isItem) {
+            return false;
+        }
+        String stem = path.substring("models/item/".length(), path.length() - ".json".length());
+        return findFallbackItemTexture(delegate, type, id.getNamespace(), stem) != null;
+    }
+
+    private static boolean containsNamespace(ResourcePack delegate, ResourceType type, String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return false;
+        }
+        try {
+            return delegate.getNamespaces(type).contains(namespace.toLowerCase(Locale.ROOT));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static Identifier toModelResourceId(String modelRef) {
+        if (modelRef == null || modelRef.isBlank()) {
+            return null;
+        }
+        String value = modelRef.trim();
+        int idx = value.indexOf(':');
+        if (idx <= 0 || idx >= value.length() - 1) {
+            return null;
+        }
+        String namespace = value.substring(0, idx);
+        String path = value.substring(idx + 1);
+        if (path.startsWith("models/")) {
+            path = path.substring("models/".length());
+        }
+        if (path.endsWith(".json")) {
+            path = path.substring(0, path.length() - ".json".length());
+        }
+        return Identifier.tryParse(namespace + ":models/" + path + ".json");
     }
 
     private static void registerWoolRemaps() {
@@ -657,7 +1153,7 @@ public final class LegacyResourcePackPatcher {
         return false;
     }
 
-    static String convertLegacyLang(InputStream stream) throws IOException {
+    static String convertLegacyLang(InputStream stream, String namespace) throws IOException {
         byte[] data = stream.readAllBytes();
         String content;
         try {
@@ -684,6 +1180,14 @@ public final class LegacyResourcePackPatcher {
                 String key = line.substring(0, idx);
                 String value = line.substring(idx + 1);
                 obj.addProperty(key, value);
+                String mapped = mapLegacyKey(key, namespace);
+                if (mapped != null && !mapped.equals(key)) {
+                    obj.addProperty(mapped, value);
+                }
+                String alt = mapLegacyKeySnake(key, namespace);
+                if (alt != null && !alt.equals(key) && !alt.equals(mapped)) {
+                    obj.addProperty(alt, value);
+                }
             }
         }
         return GSON.toJson(obj);
@@ -723,6 +1227,96 @@ public final class LegacyResourcePackPatcher {
             reporter.warnOnce(type, detail, null);
             return;
         }
-        Log.warn("[LootPP-Legacy] {} {}", type, detail);
+        Log.warn("Legacy", "{} {}", type, detail);
+    }
+
+    private static String mapLegacyKey(String key, String namespace) {
+        if (key == null || !key.endsWith(".name")) {
+            return null;
+        }
+        String base = key.substring(0, key.length() - ".name".length());
+        if (base.startsWith("tile.")) {
+            return mapWithPrefix("block", base.substring("tile.".length()), namespace);
+        }
+        if (base.startsWith("item.")) {
+            return mapWithPrefix("item", base.substring("item.".length()), namespace);
+        }
+        if (base.startsWith("entity.")) {
+            return mapWithPrefix("entity", base.substring("entity.".length()), namespace);
+        }
+        return null;
+    }
+
+    private static String mapLegacyKeySnake(String key, String namespace) {
+        if (key == null || !key.endsWith(".name")) {
+            return null;
+        }
+        String base = key.substring(0, key.length() - ".name".length());
+        if (base.startsWith("tile.")) {
+            return mapWithPrefix("block", snakeSuffix(base.substring("tile.".length()), namespace), namespace);
+        }
+        if (base.startsWith("item.")) {
+            return mapWithPrefix("item", snakeSuffix(base.substring("item.".length()), namespace), namespace);
+        }
+        if (base.startsWith("entity.")) {
+            return mapWithPrefix("entity", snakeSuffix(base.substring("entity.".length()), namespace), namespace);
+        }
+        return null;
+    }
+
+    private static String mapWithPrefix(String prefix, String legacy, String namespace) {
+        if (legacy == null || legacy.isBlank()) {
+            return null;
+        }
+        String ns = namespace == null || namespace.isBlank() ? "minecraft" : namespace;
+        String path = legacy;
+        int colon = legacy.indexOf(':');
+        if (colon > 0 && colon < legacy.length() - 1) {
+            ns = legacy.substring(0, colon);
+            path = legacy.substring(colon + 1);
+        } else {
+            int dot = legacy.indexOf('.');
+            if (dot > 0 && dot < legacy.length() - 1) {
+                ns = legacy.substring(0, dot);
+                path = legacy.substring(dot + 1);
+            }
+        }
+        return prefix + "." + ns + "." + path;
+    }
+
+    private static String snakeSuffix(String legacy, String namespace) {
+        if (legacy == null || legacy.isBlank()) {
+            return legacy;
+        }
+        String ns = namespace == null ? "" : namespace;
+        String path = legacy;
+        int colon = legacy.indexOf(':');
+        if (colon > 0 && colon < legacy.length() - 1) {
+            ns = legacy.substring(0, colon);
+            path = legacy.substring(colon + 1);
+        } else {
+            int dot = legacy.indexOf('.');
+            if (dot > 0 && dot < legacy.length() - 1) {
+                ns = legacy.substring(0, dot);
+                path = legacy.substring(dot + 1);
+            }
+        }
+        StringBuilder out = new StringBuilder(path.length() + 8);
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (Character.isUpperCase(c)) {
+                if (i > 0 && out.charAt(out.length() - 1) != '_') {
+                    out.append('_');
+                }
+                out.append(Character.toLowerCase(c));
+            } else {
+                out.append(c);
+            }
+        }
+        String snake = out.toString();
+        if (!ns.isBlank()) {
+            return ns + "." + snake;
+        }
+        return snake;
     }
 }

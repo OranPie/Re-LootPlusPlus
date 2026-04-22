@@ -111,9 +111,9 @@ public final class ChestLootHook {
             added++;
         }
         if (added == 0) {
-            Log.warn("[LootPP-Legacy] ChestLoot empty pool for {} -> {}", chestType, tableId);
+            Log.warn("Legacy", "ChestLoot empty pool for {} -> {}", chestType, tableId);
         } else {
-            Log.LOGGER.info("[LootPP-Legacy] ChestLoot {} -> {} (rules {}, rolls {}-{})", chestType, tableId, added, minRolls, maxRolls);
+            Log.info("Legacy", "ChestLoot {} -> {} (rules {}, rolls {}-{})", chestType, tableId, added, minRolls, maxRolls);
         }
         return pool;
     }

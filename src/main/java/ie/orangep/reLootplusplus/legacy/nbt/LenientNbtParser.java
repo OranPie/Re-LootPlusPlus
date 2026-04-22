@@ -11,6 +11,27 @@ public final class LenientNbtParser {
     private LenientNbtParser() {
     }
 
+    /**
+     * Parses any NBT element (list, compound, or scalar) from a raw SNBT string.
+     * Returns null on parse failure. Does not require the string to be a compound.
+     * Useful for template-evaluated strings like {@code [0.1d,0.5d,-0.2d]}.
+     */
+    public static NbtElement parseElement(String raw) {
+        if (raw == null || raw.isEmpty()) return null;
+        try {
+            return StringNbtReader.parse(raw);
+        } catch (CommandSyntaxException e) {
+            // If full SNBT fails, try wrapping as a value inside a dummy compound
+            // e.g. "[0.1d,0.2d,0.3d]" is a valid SNBT list but StringNbtReader.parse() expects compound
+            try {
+                NbtCompound dummy = (NbtCompound) StringNbtReader.parse("{v:" + raw + "}");
+                return dummy.get("v");
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+    }
+
     public static NbtCompound parseOrNull(String raw, LegacyWarnReporter warnReporter, SourceLoc loc, String warnType) {
         if (raw == null || raw.isEmpty() || "{}".equals(raw)) {
             return null;

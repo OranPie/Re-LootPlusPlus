@@ -55,7 +55,7 @@ public final class EntityDropsLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} entity drop add rules", rules.size());
+        Log.info("Loader", "Loaded {} entity drop add rules", rules.size());
         return rules;
     }
 

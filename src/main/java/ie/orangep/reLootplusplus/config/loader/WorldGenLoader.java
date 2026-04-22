@@ -47,7 +47,7 @@ public final class WorldGenLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} surface worldgen rules", rules.size());
+        Log.info("Loader", "Loaded {} surface worldgen rules", rules.size());
         return rules;
     }
 
@@ -70,7 +70,7 @@ public final class WorldGenLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} underground worldgen rules", rules.size());
+        Log.info("Loader", "Loaded {} underground worldgen rules", rules.size());
         return rules;
     }
 

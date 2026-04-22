@@ -6,24 +6,15 @@
   "mixins": [
     "BlockDropMixin",
     "ItemStackSizeMixin",
-    "LuckyAddonCraftingMixin",
-    "LuckyAddonIdFallbackMixin",
-    "LuckyDropActionsMixin",
-    "LuckyDropEvaluatorMixin",
-    "LuckyDropSanitizerMixin",
-    "LuckyFabricGameApiMixin",
-    "LuckyLoaderMixin",
-    "LuckyPluginInitMixin",
-    "LuckyParserMixin",
+    "LootManagerMixin",
     "RecipeManagerMixin",
     "PlayerManagerMixin",
-    "LuckySingleDropMixin",
-    "PlayerEntityEatMixin",
-    "LuckyWeightedDropMixin"
+    "PlayerEntityEatMixin"
   ],
   "client": [
     "ArmorFeatureRendererMixin",
     "EntityRenderDispatcherMixin",
+    "GameMenuScreenMixin",
     "MinecraftClientMixin",
     "PackScreenInvoker",
     "PackScreenMixin",

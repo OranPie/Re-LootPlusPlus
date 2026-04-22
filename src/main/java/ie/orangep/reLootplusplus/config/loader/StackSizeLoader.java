@@ -42,7 +42,7 @@ public final class StackSizeLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} stack size rules", rules.size());
+        Log.info("Loader", "Loaded {} stack size rules", rules.size());
         return rules;
     }
 

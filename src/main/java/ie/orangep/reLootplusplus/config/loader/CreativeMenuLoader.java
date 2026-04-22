@@ -44,7 +44,7 @@ public final class CreativeMenuLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} creative menu entries", entries.size());
+        Log.info("Loader", "Loaded {} creative menu entries", entries.size());
         return entries;
     }
 

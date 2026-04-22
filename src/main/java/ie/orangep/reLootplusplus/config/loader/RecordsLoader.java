@@ -41,7 +41,7 @@ public final class RecordsLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} record definitions", records.size());
+        Log.info("Loader", "Loaded {} record definitions", records.size());
         return records;
     }
 

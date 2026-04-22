@@ -41,6 +41,6 @@ public final class ModRecipes {
         Registry.register(Registry.RECIPE_TYPE, NBT_SHAPELESS_ID, NBT_SHAPELESS_TYPE);
         Registry.register(Registry.RECIPE_SERIALIZER, NBT_SHAPED_ID, NBT_SHAPED_SERIALIZER);
         Registry.register(Registry.RECIPE_SERIALIZER, NBT_SHAPELESS_ID, NBT_SHAPELESS_SERIALIZER);
-        Log.LOGGER.info("Registered custom recipe serializers for NBT outputs");
+        Log.info("Recipe", "Registered custom recipe serializers for NBT outputs");
     }
 }

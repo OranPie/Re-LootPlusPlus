@@ -43,7 +43,7 @@ public final class EffectLoader {
                 rules.addAll(parseFile(triggerKey, entry.getValue()));
             }
         }
-        Log.LOGGER.info("Loaded {} effect rules", rules.size());
+        Log.info("Loader", "Loaded {} effect rules", rules.size());
         return rules;
     }
 
@@ -183,7 +183,8 @@ public final class EffectLoader {
         return "standing_on_block".equals(triggerKey)
             || "inside_block".equals(triggerKey)
             || "blocks_in_inventory".equals(triggerKey)
-            || "digging_block_block".equals(triggerKey);
+            || "digging_block_block".equals(triggerKey)
+            || "broke_block_block".equals(triggerKey);
     }
 
     private boolean isWildcardItem(String itemName, SourceLoc loc) {

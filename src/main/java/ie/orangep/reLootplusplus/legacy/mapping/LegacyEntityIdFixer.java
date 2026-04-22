@@ -53,6 +53,9 @@ public final class LegacyEntityIdFixer {
         register("lootplusplus.ThrownItem", "re-lootplusplus:loot_thrown");
         register("lootplusplus:thrown_item", "re-lootplusplus:loot_thrown");
         register("potioncore.CustomPotion", "potioncore:custom_potion");
+        register("LuckyProjectile", "lucky:lucky_projectile");
+        register("luckyprojectile", "lucky:lucky_projectile");
+        register("lucky.LuckyProjectile", "lucky:lucky_projectile");
     }
 
     private LegacyEntityIdFixer() {
@@ -570,8 +573,21 @@ public final class LegacyEntityIdFixer {
         }
         String namespace = parsed.getNamespace();
         String path = parsed.getPath();
+        if ("lucky".equalsIgnoreCase(namespace) && path.startsWith("lucky_block_")) {
+            Identifier baseLuckyBlock = new Identifier("lucky", "lucky_block");
+            if (Registry.ITEM.containsId(baseLuckyBlock)) {
+                String mapped = baseLuckyBlock.toString();
+                warn(reporter, "LegacyItemId", "mapped legacy lucky item " + id + " -> " + mapped + formatContext(context));
+                return mapped;
+            }
+        }
         if (!"minecraft".equalsIgnoreCase(namespace)) {
             return id;
+        }
+        if (path.startsWith("record_") && path.length() > "record_".length()) {
+            String mapped = "minecraft:music_disc_" + path.substring("record_".length());
+            warn(reporter, "LegacyItemId", "mapped legacy item " + id + " -> " + mapped + formatContext(context));
+            return mapped;
         }
         String mappedPath = switch (path) {
             case "noteblock" -> "note_block";
@@ -581,6 +597,18 @@ public final class LegacyEntityIdFixer {
             case "trapdoor" -> "oak_trapdoor";
             case "fence_gate" -> "oak_fence_gate";
             case "magic_book" -> "enchanted_book";
+            case "web" -> "cobweb";
+            case "dye" -> "white_dye";
+            case "skull" -> "skeleton_skull";
+            case "fish" -> "cod";
+            case "cooked_fish" -> "cooked_cod";
+            case "slime" -> "slime_ball";
+            case "speckled_melon" -> "glistering_melon_slice";
+            case "lit_pumpkin" -> "jack_o_lantern";
+            case "waterlilly" -> "lily_pad";
+            case "quartz_ore" -> "quartz";
+            case "zombie" -> "zombie_spawn_egg";
+            case "skeleton" -> "skeleton_spawn_egg";
             default -> null;
         };
         if (mappedPath == null || mappedPath.equals(path)) {

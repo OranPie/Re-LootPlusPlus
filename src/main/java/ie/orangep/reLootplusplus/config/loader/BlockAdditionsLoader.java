@@ -46,7 +46,8 @@ public final class BlockAdditionsLoader {
                 }
             }
         }
-        Log.LOGGER.info(
+        Log.info(
+            "Loader",
             "Loaded block additions: generic={}, plants={}, crops={}, cakes={}, raw={}",
             additions.genericBlocks().size(),
             additions.plantBlocks().size(),

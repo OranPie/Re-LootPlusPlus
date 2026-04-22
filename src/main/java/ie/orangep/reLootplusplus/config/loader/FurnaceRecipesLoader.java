@@ -47,7 +47,7 @@ public final class FurnaceRecipesLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} furnace smelting rules", rules.size());
+        Log.info("Loader", "Loaded {} furnace smelting rules", rules.size());
         return rules;
     }
 
@@ -70,7 +70,7 @@ public final class FurnaceRecipesLoader {
                 }
             }
         }
-        Log.LOGGER.info("Loaded {} furnace fuel rules", rules.size());
+        Log.info("Loader", "Loaded {} furnace fuel rules", rules.size());
         return rules;
     }
 

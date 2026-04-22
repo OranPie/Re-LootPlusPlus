@@ -21,6 +21,8 @@ import java.util.Map;
 public final class RecipesLoader {
     private static final String SHAPELESS = "config/recipes/add_shapeless.txt";
     private static final String SHAPED = "config/recipes/add_shaped.txt";
+    private static final String LEGACY = "recipes.txt";
+    private static final String LEGACY_ALT = "config/recipes.txt";
 
     private final LegacyWarnReporter warnReporter;
 
@@ -58,9 +60,49 @@ public final class RecipesLoader {
                     }
                 }
             }
+            List<PackIndex.LineRecord> legacyLines = files.get(LEGACY);
+            if (legacyLines == null) {
+                legacyLines = files.get(LEGACY_ALT);
+            }
+            if (legacyLines != null) {
+                for (PackIndex.LineRecord line : legacyLines) {
+                    String raw = line.rawLine();
+                    if (LineReader.isIgnorable(raw)) {
+                        continue;
+                    }
+                    if (!parseLegacy(raw, line.sourceLoc(), defs)) {
+                        warnReporter.warn("Parse", "legacy recipe not recognized", line.sourceLoc());
+                    }
+                }
+            }
         }
-        Log.LOGGER.info("Loaded {} shaped + {} shapeless recipes", defs.shaped().size(), defs.shapeless().size());
+        Log.info("Loader", "Loaded {} shaped + {} shapeless recipes", defs.shaped().size(), defs.shapeless().size());
         return defs;
+    }
+
+    private boolean parseLegacy(String raw, SourceLoc loc, RecipeDefinitions defs) {
+        String[] parts = Splitter.splitRegex(raw, "_____");
+        if (parts.length >= 9) {
+            ShapedRecipeDef shaped = parseShaped(raw, loc);
+            if (shaped != null) {
+                defs.addShaped(shaped);
+                return true;
+            }
+            ShapelessRecipeDef shapeless = parseShapeless(raw, loc);
+            if (shapeless != null) {
+                defs.addShapeless(shapeless);
+                return true;
+            }
+            return false;
+        }
+        if (parts.length >= 7) {
+            ShapelessRecipeDef shapeless = parseShapeless(raw, loc);
+            if (shapeless != null) {
+                defs.addShapeless(shapeless);
+                return true;
+            }
+        }
+        return false;
     }
 
     private ShapelessRecipeDef parseShapeless(String raw, SourceLoc loc) {

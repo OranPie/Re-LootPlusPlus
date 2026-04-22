@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
+import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.minecraft.util.Identifier;
@@ -76,6 +77,7 @@ public final class LegacyParticleIdMapper {
         }
         String mapped = LEGACY.getOrDefault(path.toLowerCase(Locale.ROOT), path.toLowerCase(Locale.ROOT));
         String full = namespace.toLowerCase(Locale.ROOT) + ":" + mapped;
+        full = CustomRemapStore.map(full, reporter, loc, "particle");
         if (Identifier.tryParse(full) == null) {
             return "minecraft:smoke";
         }

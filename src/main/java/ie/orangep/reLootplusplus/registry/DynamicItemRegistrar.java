@@ -28,6 +28,8 @@ import ie.orangep.reLootplusplus.config.model.rule.ThrownDef;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEffectIdMapper;
+import net.minecraft.item.ArmorMaterial;
+import net.minecraft.item.ArmorMaterials;
 import net.minecraft.item.Item;
 import net.minecraft.item.ToolMaterial;
 import net.minecraft.recipe.Ingredient;
@@ -65,10 +67,10 @@ public final class DynamicItemRegistrar {
             Registry.register(Registry.ITEM, id, item);
             added++;
             if (!Registry.ITEM.containsId(id)) {
-                Log.warn("[LootPP-Legacy] Thrown item not registered {}", id);
+                warnReporter.warn("LegacyItemId", "thrown item not registered " + id, def.sourceLoc());
             }
         }
-        Log.LOGGER.info("Registered {} thrown items", added);
+        Log.info("Registry", "Registered {} thrown items", added);
     }
 
     public void registerItemAdditions(ItemAdditions additions) {
@@ -192,12 +194,33 @@ public final class DynamicItemRegistrar {
     private void registerArmor(ItemAdditions additions, List<ArmorDef> defs) {
         for (ArmorDef def : defs) {
             MaterialDef materialDef = additions.findMaterial(def.materialItemId(), def.materialMeta());
-            if (materialDef == null) {
-                warnReporter.warn("LegacyMaterial", "missing material " + def.materialItemId(), def.sourceLoc());
-                registerItem(def.itemId(), () -> new LegacyNamedItem(new Item.Settings(), false, def.displayName()), def.sourceLoc());
-                continue;
+            if (materialDef == null && shouldInferMaterial(def.materialItemId())) {
+                String inferred = inferMaterialFromTextureBase(def.textureBase());
+                if (inferred != null) {
+                    materialDef = additions.findMaterial(inferred, def.materialMeta());
+                    if (materialDef != null) {
+                        warnReporter.warnOnce(
+                            "LegacyArmor",
+                            "inferred armor material " + def.materialItemId() + " -> " + inferred,
+                            def.sourceLoc()
+                        );
+                    }
+                }
             }
-            LegacyArmorMaterial material = createArmorMaterial(materialDef, def.textureBase(), def.sourceLoc());
+            ArmorMaterial vanillaMaterial = null;
+            if (materialDef == null) {
+                vanillaMaterial = resolveVanillaArmorMaterial(def.materialItemId());
+            }
+            if (materialDef == null) {
+                if (vanillaMaterial == null) {
+                    warnReporter.warn("LegacyMaterial", "missing material " + def.materialItemId(), def.sourceLoc());
+                    registerItem(def.itemId(), () -> new LegacyNamedItem(new Item.Settings(), false, def.displayName()), def.sourceLoc());
+                    continue;
+                }
+            }
+            LegacyArmorMaterial material = materialDef != null
+                ? createArmorMaterial(materialDef, def.textureBase(), def.sourceLoc())
+                : createVanillaArmorMaterial(vanillaMaterial, def.textureBase(), def.sourceLoc());
             EquipmentSlot slot = switch (def.slotType()) {
                 case HELMET -> EquipmentSlot.HEAD;
                 case CHESTPLATE -> EquipmentSlot.CHEST;
@@ -293,6 +316,87 @@ public final class DynamicItemRegistrar {
             path = path.substring(1);
         }
         return (namespace + ":" + path).toLowerCase(Locale.ROOT);
+    }
+
+    private String inferMaterialFromTextureBase(String textureBase) {
+        if (textureBase == null || textureBase.isBlank()) {
+            return null;
+        }
+        String value = textureBase.trim();
+        String namespace = "lootplusplus";
+        String path = value;
+        int colon = value.indexOf(':');
+        if (colon > 0 && colon < value.length() - 1) {
+            namespace = value.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
+            path = value.substring(colon + 1);
+        }
+        String normalized = path.replace('\\', '/');
+        String prefix = "textures/models/armor/";
+        if (normalized.contains(prefix)) {
+            normalized = normalized.substring(normalized.lastIndexOf(prefix) + prefix.length());
+        }
+        if (normalized.endsWith(".png")) {
+            normalized = normalized.substring(0, normalized.length() - ".png".length());
+        }
+        if (normalized.endsWith("_layer_1")) {
+            normalized = normalized.substring(0, normalized.length() - "_layer_1".length());
+        } else if (normalized.endsWith("_layer_2")) {
+            normalized = normalized.substring(0, normalized.length() - "_layer_2".length());
+        }
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return (namespace + ":" + normalized).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private LegacyArmorMaterial createVanillaArmorMaterial(ArmorMaterial vanilla, String textureBase, ie.orangep.reLootplusplus.diagnostic.SourceLoc loc) {
+        int[] base = new int[] {13, 15, 16, 11};
+        int durabilityFactor = Math.max(1, vanilla.getDurability(EquipmentSlot.HEAD) / base[0]);
+        int[] protection = new int[] {
+            vanilla.getProtectionAmount(EquipmentSlot.HEAD),
+            vanilla.getProtectionAmount(EquipmentSlot.CHEST),
+            vanilla.getProtectionAmount(EquipmentSlot.LEGS),
+            vanilla.getProtectionAmount(EquipmentSlot.FEET)
+        };
+        String name = normalizeArmorName(textureBase, loc);
+        return new LegacyArmorMaterial(
+            name,
+            durabilityFactor,
+            protection,
+            vanilla.getEnchantability(),
+            vanilla.getRepairIngredient(),
+            vanilla.getToughness(),
+            vanilla.getKnockbackResistance()
+        );
+    }
+
+    private ArmorMaterial resolveVanillaArmorMaterial(String materialItemId) {
+        if (materialItemId == null) {
+            return null;
+        }
+        String value = materialItemId.trim().toLowerCase(java.util.Locale.ROOT);
+        String path = value;
+        int colon = value.indexOf(':');
+        if (colon > 0 && colon < value.length() - 1) {
+            path = value.substring(colon + 1);
+        }
+        return switch (path) {
+            case "diamond" -> ArmorMaterials.DIAMOND;
+            case "iron" -> ArmorMaterials.IRON;
+            case "gold", "golden", "gold_ingot" -> ArmorMaterials.GOLD;
+            case "leather" -> ArmorMaterials.LEATHER;
+            case "chain", "chainmail" -> ArmorMaterials.CHAIN;
+            case "netherite" -> ArmorMaterials.NETHERITE;
+            default -> null;
+        };
+    }
+
+    private boolean shouldInferMaterial(String materialItemId) {
+        if (materialItemId == null) {
+            return true;
+        }
+        String value = materialItemId.trim().toLowerCase(java.util.Locale.ROOT);
+        return value.isEmpty() || "auto".equals(value) || "infer".equals(value);
     }
 
     private void registerItem(String rawId, Supplier<Item> supplier, ie.orangep.reLootplusplus.diagnostic.SourceLoc loc) {

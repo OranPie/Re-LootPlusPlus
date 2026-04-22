@@ -3,14 +3,18 @@ package ie.orangep.reLootplusplus.command;
 import ie.orangep.reLootplusplus.command.exec.CommandChain;
 import ie.orangep.reLootplusplus.command.exec.ExecContext;
 import ie.orangep.reLootplusplus.command.exec.ExecResult;
+import ie.orangep.reLootplusplus.content.entity.LootThrownItemEntity;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
 import ie.orangep.reLootplusplus.legacy.nbt.NbtPredicate;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEffectIdMapper;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyParticleIdMapper;
 import ie.orangep.reLootplusplus.legacy.selector.LegacySelectorParser;
 import ie.orangep.reLootplusplus.legacy.selector.SelectorContext;
+import ie.orangep.reLootplusplus.registry.EntityRegistrar;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.enchantment.Enchantment;
@@ -426,6 +430,9 @@ public final class LegacyCommandRunner {
             return ExecResult.success(0);
         }
         String entityId = tokens.get(1);
+        // Normalize legacy entity IDs (e.g. lootplusplus.ThrownItem → re-lootplusplus:loot_thrown)
+        entityId = LegacyEntityIdFixer.normalizeEntityId(entityId, ctx.warnReporter(),
+            ctx.sourceLoc() == null ? null : ctx.sourceLoc().formatShort());
         BlockPos origin = ctx.origin();
         int index = 2;
         double x = origin.getX();
@@ -445,6 +452,21 @@ public final class LegacyCommandRunner {
         EntityType<?> type = resolveEntityType(entityId, ctx);
         if (type == null) {
             return ExecResult.success(0);
+        }
+        // Special handling for thrown items: read ItemThrown from NBT to set the ThrownDef
+        if (type == EntityRegistrar.THROWN_ENTITY && nbt != null
+                && nbt.contains("ItemThrown", net.minecraft.nbt.NbtElement.STRING_TYPE)) {
+            String itemId = nbt.getString("ItemThrown");
+            var thrownRegistry = RuntimeState.thrownRegistry();
+            var thrownDef = thrownRegistry != null ? thrownRegistry.get(itemId) : null;
+            var commandRunner = RuntimeState.commandRunner();
+            var warnReporter = RuntimeState.warnReporter();
+            LootThrownItemEntity thrown = new LootThrownItemEntity(
+                EntityRegistrar.THROWN_ENTITY, ctx.world(), thrownDef, commandRunner, warnReporter);
+            thrown.readNbt(nbt);
+            thrown.refreshPositionAndAngles(x, y, z, thrown.getYaw(), thrown.getPitch());
+            boolean spawned = ctx.world().spawnEntity(thrown);
+            return ExecResult.success(spawned ? 1 : 0);
         }
         Entity entity = type.create(ctx.world());
         if (entity == null) {

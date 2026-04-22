@@ -3,6 +3,8 @@ package ie.orangep.reLootplusplus.legacy;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyEffectIdMapper;
+import net.minecraft.util.Identifier;
 
 import java.util.Locale;
 
@@ -17,6 +19,10 @@ public final class LegacyDropSanitizer {
             return raw;
         }
         SANITIZE_CONTEXT.set(preview(raw));
+        raw = fixAttrTypos(raw, reporter);
+        raw = fixInlineLegacyCommentSuffix(raw, reporter);
+        raw = fixDropTokenTypos(raw, reporter);
+        raw = fixKnownDropHardCases(raw, reporter);
         raw = fixLegacySetblock(raw, reporter);
         raw = fixDanglingCloseParenBeforeAttr(raw, reporter);
         raw = fixMissingGroupCloseBeforeAttr(raw, reporter);
@@ -32,15 +38,19 @@ public final class LegacyDropSanitizer {
         dropPart = fixDirtyQuotes(dropPart, reporter);
         dropPart = fixMissingCommaAfterParen(dropPart, reporter);
         dropPart = fixMissingFunctionHash(dropPart, reporter);
+        dropPart = fixAmpersandFunctions(dropPart, reporter);
+        dropPart = fixAmountTupleRand(dropPart, reporter);
+        dropPart = fixCommaSeparatedIdLists(dropPart, reporter);
         dropPart = fixUnknownTypeAsEntity(dropPart, reporter);
         dropPart = fixMissingTypedIdEquals(dropPart, reporter);
         dropPart = fixLegacyFallingBlockType(dropPart, reporter);
         dropPart = fixEmptyIdSeparators(dropPart, reporter);
         dropPart = fixDanglingPosOffset(dropPart, reporter);
         dropPart = fixTrailingCommas(dropPart, reporter);
-        dropPart = fixSoundIdCase(dropPart, reporter);
+        dropPart = fixSoundAndEffectIds(dropPart, reporter);
         dropPart = fixChestMacroItemIds(dropPart, reporter);
         dropPart = fixEntityIdTokens(dropPart, reporter);
+        dropPart = fixRandListEntityId(dropPart, reporter);
         dropPart = fixBareItemIds(dropPart, reporter);
         dropPart = fixLegacyWoolMeta(dropPart, reporter);
         dropPart = fixBareBlockDrops(dropPart, reporter);
@@ -48,6 +58,7 @@ public final class LegacyDropSanitizer {
         dropPart = collapseCommas(dropPart);
         dropPart = trimTopLevelTrailingSemicolon(dropPart);
         dropPart = fixUnclosedGroupAtEnd(dropPart, reporter);
+        dropPart = fixUnclosedParensAtEnd(dropPart, reporter);
         warnLegacyGroupRepeat(dropPart, reporter);
         String sanitized = parts.rebuild(dropPart, normalizeAttrParts(parts.attrs, reporter));
         if (!raw.equals(sanitized)) {
@@ -263,6 +274,18 @@ public final class LegacyDropSanitizer {
                 int j = i + 6;
                 while (j < input.length() && Character.isWhitespace(input.charAt(j))) {
                     j++;
+                }
+                // Skip optional numeric repeat: group:N:( or group:N ( 
+                if (j < input.length() && Character.isDigit(input.charAt(j))) {
+                    while (j < input.length() && Character.isDigit(input.charAt(j))) {
+                        j++;
+                    }
+                    if (j < input.length() && input.charAt(j) == ':') {
+                        j++;
+                    }
+                    while (j < input.length() && Character.isWhitespace(input.charAt(j))) {
+                        j++;
+                    }
                 }
                 if (j < input.length() && input.charAt(j) == '(') {
                     out.append("group");
@@ -626,7 +649,7 @@ public final class LegacyDropSanitizer {
         return out.toString();
     }
 
-    private static String fixSoundIdCase(String input, LegacyWarnReporter reporter) {
+    private static String fixSoundAndEffectIds(String input, LegacyWarnReporter reporter) {
         if (input == null || input.isEmpty()) {
             return input;
         }
@@ -655,7 +678,7 @@ public final class LegacyDropSanitizer {
                         j++;
                     }
                     String rawId = input.substring(start, j);
-                    String fixed = rawId.toLowerCase(Locale.ROOT);
+                    String fixed = normalizeLegacySoundId(rawId);
                     if (!fixed.equals(rawId)) {
                         changed = true;
                         warnOnce(reporter, "LegacySound", "normalized sound id " + rawId + " -> " + fixed);
@@ -664,10 +687,47 @@ public final class LegacyDropSanitizer {
                     i = j - 1;
                     continue;
                 }
+                if (depth <= 1 && input.startsWith("type=effect,ID=", i)) {
+                    int start = i + "type=effect,ID=".length();
+                    int j = start;
+                    while (j < input.length()) {
+                        char cj = input.charAt(j);
+                        if (cj == ',' || cj == ';' || cj == '@' || cj == ')') {
+                            break;
+                        }
+                        j++;
+                    }
+                    String rawId = input.substring(start, j).trim();
+                    Identifier resolved = LegacyEffectIdMapper.resolve(rawId, reporter, null);
+                    String fixed = resolved == null ? normalizeLegacyEffectId(rawId) : resolved.toString();
+                    if (!fixed.equals(rawId)) {
+                        changed = true;
+                        warnOnce(reporter, "LegacyEffect", "normalized effect id " + rawId + " -> " + fixed);
+                    }
+                    out.append("type=effect,ID=").append(fixed);
+                    i = j - 1;
+                    continue;
+                }
             }
             out.append(c);
         }
         return changed ? out.toString() : input;
+    }
+
+    private static String normalizeLegacySoundId(String rawId) {
+        String normalized = rawId == null ? "" : rawId.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "portal.travel" -> "minecraft:block.portal.travel";
+            case "ambient.weather.thunder" -> "minecraft:entity.lightning_bolt.thunder";
+            case "note.pling" -> "minecraft:block.note_block.pling";
+            case "random.fizz" -> "minecraft:block.fire.extinguish";
+            default -> normalized;
+        };
+    }
+
+    private static String normalizeLegacyEffectId(String rawId) {
+        String normalized = rawId == null ? "" : rawId.trim().toLowerCase(Locale.ROOT);
+        return normalized;
     }
 
     private static String fixEntityIdTokens(String input, LegacyWarnReporter reporter) {
@@ -889,6 +949,420 @@ public final class LegacyDropSanitizer {
                 out.append(')');
             }
             warnOnce(reporter, "LegacyGroupClose", "appended missing ')' at end of group");
+            return out.toString();
+        }
+        return input;
+    }
+
+    /** Replaces known @attr keyword typos (e.g. @chanche → @chance) before LegacyDropParts splits them. */
+    private static String fixAttrTypos(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains("@")) {
+            return input;
+        }
+        String out = input;
+        // @chanche=N typo for @chance=N (seen in LuckyBlock++ plural packs)
+        if (out.contains("chanche")) {
+            String fixed = out.replace("@chanche=", "@chance=")
+                              .replace("@chanche ", "@chance ")
+                              .replace("@chanche@", "@chance@");
+            if (!fixed.equals(out)) {
+                out = fixed;
+                warnOnce(reporter, "LegacyAttrTypo", "fixed '@chanche' -> '@chance' typo");
+            }
+        }
+        return out;
+    }
+
+    private static String fixInlineLegacyCommentSuffix(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains(" / ")) {
+            return input;
+        }
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 1; i < input.length() - 1; i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            }
+            if (inSingle || inDouble) {
+                continue;
+            }
+            if (input.charAt(i - 1) == ' ' && c == '/' && input.charAt(i + 1) == ' ') {
+                warnOnce(reporter, "LegacyInlineComment", "stripped trailing inline '/ ...' suffix");
+                return input.substring(0, i - 1).trim();
+            }
+        }
+        return input;
+    }
+
+    private static String fixDropTokenTypos(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        String out = input;
+        String fixed = out
+            .replace("type=enntity", "type=entity")
+            .replace("type=falling_block", "type=falling_block")
+            .replace("sice=", "size=")
+            .replace("typeSound=", "type=sound,ID=")
+            .replace("NBTTag(", "NBTTag=(")
+            .replace("CustomName\"", "CustomName=\"");
+        if (!fixed.equals(out)) {
+            warnOnce(reporter, "LegacyDropTypo", "fixed known drop token typos");
+            out = fixed;
+        }
+        return out;
+    }
+
+    private static String fixKnownDropHardCases(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        String out = input;
+        String fixed = out
+            .replace("id_diamond_boots", "id=diamond_boots")
+            .replace("NBTTag=((", "NBTTag=(")
+            .replace(");(type=", ";type=")
+            .replace("));(type=", ";type=")
+            .replace("posOFFset=", "posOffset=")
+            .replace("size(", "size=(")
+            .replace("#ran(", "#rand(")
+            .replace("],(id=chainmail_boots", "],(id=chainmail_boots");
+        if (!fixed.equals(out)) {
+            out = fixed;
+            warnOnce(reporter, "LegacyDropFix", "applied targeted hard-case rewrites");
+        }
+        if (out.startsWith("group(posY=") && out.contains(");type=entity,")) {
+            int cut = out.indexOf(");type=entity,");
+            if (cut > 0) {
+                out = out.substring(cut + 2);
+                warnOnce(reporter, "LegacyDropFix", "removed orphan group(posY=...) prefix");
+            }
+        }
+        if (out.contains("type=effect,ID=special_knockback")) {
+            out = out.replace("type=effect,ID=special_knockback,power=4,range=4,delay=0.1;", "");
+            warnOnce(reporter, "LegacyDropFix", "removed unsupported special_knockback effect");
+        }
+        return out;
+    }
+
+    private static String fixAmountTupleRand(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains("amount=(")) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length());
+        boolean changed = false;
+        for (int i = 0; i < input.length(); i++) {
+            if (startsWithIgnoreCase(input, i, "amount=(")) {
+                int start = i + "amount=(".length();
+                int comma = input.indexOf(',', start);
+                int close = input.indexOf(')', start);
+                if (comma > start && close > comma) {
+                    String a = input.substring(start, comma).trim();
+                    String b = input.substring(comma + 1, close).trim();
+                    if (isIntLike(a) && isIntLike(b)) {
+                        out.append("amount=#rand(").append(a).append(',').append(b).append(')');
+                        i = close;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+            out.append(input.charAt(i));
+        }
+        if (changed) {
+            warnOnce(reporter, "LegacyAmount", "mapped amount=(a,b) -> amount=#rand(a,b)");
+            return out.toString();
+        }
+        return input;
+    }
+
+    private static String fixCommaSeparatedIdLists(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || indexOfIgnoreCase(input, "id=") < 0) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length() + 64);
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean changed = false;
+        int i = 0;
+        while (i < input.length()) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            }
+            if (!inSingle && !inDouble && startsWithIgnoreCase(input, i, "id=")) {
+                int valueStart = i + 3;
+                int j = valueStart;
+                while (j < input.length()) {
+                    char cj = input.charAt(j);
+                    if (cj == ';' || cj == '@' || cj == ')') {
+                        break;
+                    }
+                    if (cj == ',') {
+                        int k = j + 1;
+                        while (k < input.length() && Character.isWhitespace(input.charAt(k))) {
+                            k++;
+                        }
+                        int nameStart = k;
+                        while (k < input.length()) {
+                            char ck = input.charAt(k);
+                            if (!(Character.isLetterOrDigit(ck) || ck == '_' || ck == ':' || ck == '.' || ck == '-')) {
+                                break;
+                            }
+                            k++;
+                        }
+                        if (k < input.length() && input.charAt(k) == '=') {
+                            break;
+                        }
+                        if (nameStart == k) {
+                            break;
+                        }
+                    }
+                    j++;
+                }
+                String rawId = input.substring(valueStart, j).trim();
+                String replacedId = rewriteIdList(rawId);
+                out.append(input, i, valueStart).append(replacedId);
+                changed = changed || !replacedId.equals(rawId);
+                i = j;
+                continue;
+            }
+            out.append(c);
+            i++;
+        }
+        if (changed) {
+            warnOnce(reporter, "LegacyIdList", "mapped comma-separated ID list -> #randList(...)");
+            return out.toString();
+        }
+        return input;
+    }
+
+    private static String rewriteIdList(String rawId) {
+        if (rawId == null || rawId.isEmpty()) {
+            return rawId;
+        }
+        if (!rawId.contains(",") || startsWithIgnoreCase(rawId, 0, "#randList(")) {
+            return rawId;
+        }
+        String[] parts = rawId.split(",");
+        if (parts.length < 2) {
+            return rawId;
+        }
+        java.util.List<String> ids = new java.util.ArrayList<>(parts.length);
+        String namespace = null;
+        for (String part : parts) {
+            String token = part == null ? "" : part.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            if (token.indexOf('=') >= 0 || token.indexOf(' ') >= 0 || token.indexOf('(') >= 0 || token.indexOf(')') >= 0) {
+                return rawId;
+            }
+            if (token.contains(":")) {
+                int colon = token.indexOf(':');
+                namespace = token.substring(0, colon).toLowerCase(Locale.ROOT);
+                ids.add(token.toLowerCase(Locale.ROOT));
+            } else {
+                String ns = namespace == null ? "minecraft" : namespace;
+                ids.add(ns + ":" + token.toLowerCase(Locale.ROOT));
+            }
+        }
+        if (ids.size() < 2) {
+            return rawId;
+        }
+        return "#randList(" + String.join(",", ids) + ")";
+    }
+
+    private static boolean isIntLike(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return false;
+        }
+        int i = 0;
+        if (raw.charAt(0) == '-' || raw.charAt(0) == '+') {
+            i = 1;
+        }
+        if (i >= raw.length()) {
+            return false;
+        }
+        for (; i < raw.length(); i++) {
+            if (!Character.isDigit(raw.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Replaces &funcName( with #funcName( — some 1.8 packs used & instead of # as function prefix. */
+    private static String fixAmpersandFunctions(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains("&")) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length());
+        boolean changed = false;
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            } else if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')' && depth > 0) {
+                    depth--;
+                } else if (c == '&') {
+                    int j = i + 1;
+                    if (j < input.length() && isIdentStart(input.charAt(j))) {
+                        int k = j + 1;
+                        while (k < input.length() && isIdentPart(input.charAt(k))) {
+                            k++;
+                        }
+                        if (k < input.length() && input.charAt(k) == '(') {
+                            out.append('#');
+                            changed = true;
+                            warnOnce(reporter, "LegacyAmpersandFunction", "replaced '&' with '#' before function call");
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.append(c);
+        }
+        return changed ? out.toString() : input;
+    }
+
+    /**
+     * Converts 1.8 _rand_list_ entity ID syntax to 1.18 #randList(...) template calls.
+     * Example: ID=minecraft:_rand_list_creeper,Zombie,Skeleton → ID=#randList(minecraft:creeper,minecraft:zombie,minecraft:skeleton)
+     */
+    private static String fixRandListEntityId(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty() || !input.contains("_rand_list_")) {
+            return input;
+        }
+        StringBuilder out = new StringBuilder(input.length() + 64);
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        boolean changed = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            } else if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth = Math.max(0, depth - 1);
+                } else if (depth == 0 && startsWithIgnoreCase(input, i, "id=")) {
+                    int valueStart = i + 3;
+                    int j = valueStart;
+                    while (j < input.length()) {
+                        char cj = input.charAt(j);
+                        if (cj == ',' || cj == ';' || cj == '@' || cj == ')') {
+                            break;
+                        }
+                        j++;
+                    }
+                    String idValue = input.substring(valueStart, j);
+                    int rlIdx = idValue.toLowerCase(Locale.ROOT).indexOf(":_rand_list_");
+                    if (rlIdx >= 0) {
+                        String nsRaw = idValue.substring(0, rlIdx);
+                        String firstName = idValue.substring(rlIdx + ":_rand_list_".length());
+                        String ns = nsRaw.isEmpty() ? "minecraft" : nsRaw.toLowerCase(Locale.ROOT);
+                        java.util.List<String> entities = new java.util.ArrayList<>();
+                        entities.add(normalizeRandListEntry(ns, firstName, reporter));
+                        int k = j;
+                        while (k < input.length() && input.charAt(k) == ',') {
+                            int m = k + 1;
+                            while (m < input.length() && input.charAt(m) == ' ') {
+                                m++;
+                            }
+                            int n = m;
+                            while (n < input.length()) {
+                                char cn = input.charAt(n);
+                                if (cn == ',' || cn == ';' || cn == '@' || cn == ')') {
+                                    break;
+                                }
+                                n++;
+                            }
+                            String token = input.substring(m, n).trim();
+                            if (token.isEmpty() || token.contains("=")) {
+                                break;
+                            }
+                            entities.add(normalizeRandListEntry(ns, token, reporter));
+                            k = n;
+                        }
+                        out.append("ID=#randList(");
+                        for (int ei = 0; ei < entities.size(); ei++) {
+                            if (ei > 0) {
+                                out.append(',');
+                            }
+                            out.append(entities.get(ei));
+                        }
+                        out.append(')');
+                        changed = true;
+                        warnOnce(reporter, "LegacyRandList", "converted _rand_list_ to #randList()");
+                        i = k - 1;
+                        continue;
+                    }
+                }
+            }
+            out.append(c);
+        }
+        return changed ? out.toString() : input;
+    }
+
+    private static String normalizeRandListEntry(String ns, String rawName, LegacyWarnReporter reporter) {
+        if (rawName == null || rawName.isEmpty()) {
+            return ns + ":unknown";
+        }
+        String bare = LegacyEntityIdFixer.normalizeEntityId(rawName, reporter, "rand_list");
+        if (!bare.equals(rawName)) {
+            return bare;
+        }
+        String withNs = LegacyEntityIdFixer.normalizeEntityId(ns + ":" + rawName, reporter, "rand_list");
+        return withNs;
+    }
+
+    /** Appends missing closing parentheses at the end of any drop string (not just group drops). */
+    private static String fixUnclosedParensAtEnd(String input, LegacyWarnReporter reporter) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        boolean inSingle = false;
+        boolean inDouble = false;
+        int depth = 0;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (!inDouble && c == '\'') {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"') {
+                inDouble = !inDouble;
+            } else if (!inSingle && !inDouble) {
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth = Math.max(0, depth - 1);
+                }
+            }
+        }
+        if (depth > 0) {
+            StringBuilder out = new StringBuilder(input.length() + depth);
+            out.append(input);
+            for (int i = 0; i < depth; i++) {
+                out.append(')');
+            }
+            warnOnce(reporter, "LegacyUnclosedParen", "appended " + depth + " missing ')' at end of drop");
             return out.toString();
         }
         return input;

@@ -27,10 +27,6 @@ public abstract class EntityRenderDispatcherMixin {
 
     @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
     private void relootplusplus$skipMissingRenderer(Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir) {
-        var config = RuntimeState.config();
-        if (config == null || !config.skipMissingEntityRenderers) {
-            return;
-        }
         EntityRenderer<? super Entity> renderer = getRenderer(entity);
         if (renderer != null) {
             return;
@@ -49,6 +45,6 @@ public abstract class EntityRenderDispatcherMixin {
             reporter.warnOnce(type, detail, null);
             return;
         }
-        Log.warn("[LootPP-Legacy] {} {}", type, detail);
+        Log.warn("Legacy", "{} {}", type, detail);
     }
 }

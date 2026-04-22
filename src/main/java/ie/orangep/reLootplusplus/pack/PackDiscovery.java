@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.pack;
 
+import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.Log;
@@ -32,6 +33,15 @@ public final class PackDiscovery {
     }
 
     public List<AddonPack> discover() {
+        List<AddonPack> packs = discoverAll();
+        if (config != null) {
+            packs = filterEnabled(packs);
+        }
+        Log.info("Pack", "Discovered {} addon packs", packs.size());
+        return packs;
+    }
+
+    public List<AddonPack> discoverAll() {
         List<AddonPack> packs = new ArrayList<>();
         Set<Path> candidateDirs = new HashSet<>();
         Map<String, Integer> idCounts = new HashMap<>();
@@ -49,11 +59,6 @@ public final class PackDiscovery {
         candidateDirs.add(gameDir.resolve("addons").resolve("lucky_block"));
         candidateDirs.add(gameDir.resolve("packs"));
         candidateDirs.add(gameDir.resolve("mods"));
-        candidateDirs.add(gameDir.resolve("examples"));
-        Path parent = gameDir.getParent();
-        if (parent != null) {
-            candidateDirs.add(parent.resolve("examples"));
-        }
         if (config != null && config.extraAddonDirs != null) {
             for (String extra : config.extraAddonDirs) {
                 addDir(candidateDirs, extra);
@@ -65,8 +70,6 @@ public final class PackDiscovery {
                 addPack(packs, idCounts, pack, duplicateStrategy);
             }
         }
-
-        Log.LOGGER.info("Discovered {} addon packs", packs.size());
         return packs;
     }
 
@@ -95,7 +98,7 @@ public final class PackDiscovery {
                 packs.add(new AddonPack(stripZip(zip.getFileName().toString()), zip));
             }
         } catch (Exception e) {
-            Log.warn("Failed to scan addon dir {}", dir, e);
+            Log.error("Pack", "Failed to scan addon dir {}", dir, e);
         }
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
             for (Path child : stream) {
@@ -107,7 +110,7 @@ public final class PackDiscovery {
                 }
             }
         } catch (Exception e) {
-            Log.warn("Failed to scan addon folders {}", dir, e);
+            Log.error("Pack", "Failed to scan addon folders {}", dir, e);
         }
         return packs;
     }
@@ -141,7 +144,7 @@ public final class PackDiscovery {
         if (warnReporter != null) {
             warnReporter.warnOnce("DuplicatePack", detail, null);
         } else {
-            Log.warn("[LootPP-Legacy] DuplicatePack {}", detail);
+            Log.warn("Legacy", "DuplicatePack {}", detail);
         }
     }
 
@@ -150,5 +153,15 @@ public final class PackDiscovery {
             return name.substring(0, name.length() - 4);
         }
         return name;
+    }
+
+    private static List<AddonPack> filterEnabled(List<AddonPack> packs) {
+        List<AddonPack> out = new ArrayList<>();
+        for (AddonPack pack : packs) {
+            if (AddonDisableStore.isEnabled(pack.id())) {
+                out.add(pack);
+            }
+        }
+        return out;
     }
 }

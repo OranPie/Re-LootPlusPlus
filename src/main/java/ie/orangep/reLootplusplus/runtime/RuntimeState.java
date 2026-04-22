@@ -11,9 +11,15 @@ public final class RuntimeState {
     private static volatile ReLootPlusPlusConfig config;
     private static volatile RuleEngine ruleEngine;
     private static volatile ie.orangep.reLootplusplus.runtime.ChestLootRegistry chestLootRegistry;
+    private static volatile ie.orangep.reLootplusplus.runtime.ThrownRegistry thrownRegistry;
+    private static volatile ie.orangep.reLootplusplus.legacy.mapping.LegacyChestTypeMapper chestTypeMapper;
+    private static final ie.orangep.reLootplusplus.command.LegacyCommandRunner COMMAND_RUNNER =
+        new ie.orangep.reLootplusplus.command.LegacyCommandRunner();
     private static volatile java.util.List<ie.orangep.reLootplusplus.config.model.general.CreativeMenuEntry> creativeMenuEntries;
     private static volatile java.util.List<ie.orangep.reLootplusplus.config.model.rule.ThrownDef> thrownDefs;
     private static volatile ie.orangep.reLootplusplus.config.model.recipe.RecipeDefinitions recipeDefinitions;
+    private static final java.util.concurrent.atomic.AtomicLong luckyEvalErrorCounter =
+        new java.util.concurrent.atomic.AtomicLong(0L);
 
     private RuntimeState() {
     }
@@ -57,6 +63,26 @@ public final class RuntimeState {
         return chestLootRegistry;
     }
 
+    public static void setThrownRegistry(ie.orangep.reLootplusplus.runtime.ThrownRegistry registry) {
+        thrownRegistry = registry;
+    }
+
+    public static ie.orangep.reLootplusplus.runtime.ThrownRegistry thrownRegistry() {
+        return thrownRegistry;
+    }
+
+    public static void setChestTypeMapper(ie.orangep.reLootplusplus.legacy.mapping.LegacyChestTypeMapper mapper) {
+        chestTypeMapper = mapper;
+    }
+
+    public static ie.orangep.reLootplusplus.legacy.mapping.LegacyChestTypeMapper chestTypeMapper() {
+        return chestTypeMapper;
+    }
+
+    public static ie.orangep.reLootplusplus.command.LegacyCommandRunner commandRunner() {
+        return COMMAND_RUNNER;
+    }
+
     public static void setCreativeMenuEntries(java.util.List<ie.orangep.reLootplusplus.config.model.general.CreativeMenuEntry> entries) {
         creativeMenuEntries = entries;
     }
@@ -79,5 +105,13 @@ public final class RuntimeState {
 
     public static ie.orangep.reLootplusplus.config.model.recipe.RecipeDefinitions recipeDefinitions() {
         return recipeDefinitions;
+    }
+
+    public static long luckyEvalErrorCounter() {
+        return luckyEvalErrorCounter.get();
+    }
+
+    public static void incrementLuckyEvalErrorCounter() {
+        luckyEvalErrorCounter.incrementAndGet();
     }
 }
