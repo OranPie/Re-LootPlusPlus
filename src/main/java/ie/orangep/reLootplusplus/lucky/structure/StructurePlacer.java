@@ -11,17 +11,45 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.registry.Registry;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
-/** Places a {@link ParsedStructure} in the world. */
+/**
+ * Places a {@link ParsedStructure} in the world.
+ *
+ * <p>Uses a two-pass strategy to prevent attached blocks (levers, torches, buttons, etc.)
+ * from being placed before their support surface exists:
+ * <ol>
+ *   <li>Pass 1 — solid / structural blocks — placed without neighbor notifications so that
+ *       mass-placement does not trigger premature neighbor validation.</li>
+ *   <li>Pass 2 — attached blocks — placed after all structural blocks are in place so every
+ *       support surface already exists when the attached block is set.</li>
+ * </ol>
+ */
 public final class StructurePlacer {
+
+    /**
+     * Block IDs (path portion only, no namespace prefix) that require an adjacent solid
+     * surface to stay in place.  These are deferred to pass 2.
+     */
+    private static final Set<String> ATTACHED_EXACT = Set.of(
+        "lever",
+        "torch", "wall_torch",
+        "redstone_torch", "redstone_wall_torch",
+        "ladder",
+        "vine",
+        "cocoa",
+        "tripwire", "tripwire_hook"
+    );
 
     private StructurePlacer() {}
 
     public static void place(ParsedStructure structure, ServerWorld world, BlockPos breakPos,
-                              int centerX, int centerY, int centerZ,
-                              String blockMode, BlockRotation rotation) {
+                               int centerX, int centerY, int centerZ,
+                               String blockMode, BlockRotation rotation) {
         int w = structure.width();
         int l = structure.length();
 
@@ -40,6 +68,10 @@ public final class StructurePlacer {
 
         boolean overlayMode = "overlay".equalsIgnoreCase(blockMode);
 
+        // Partition blocks into solid (pass 1) and attached (pass 2).
+        List<PlacementEntry> pass1 = new ArrayList<>();
+        List<PlacementEntry> pass2 = new ArrayList<>();
+
         for (StructureBlock sb : structure.blocks()) {
             int rx = sb.relX(), rz = sb.relZ();
             if (rotation == BlockRotation.CLOCKWISE_90) {
@@ -56,33 +88,63 @@ public final class StructurePlacer {
             }
 
             BlockPos worldPos = new BlockPos(startX + rx, startY + sb.relY(), startZ + rz);
-
             if (overlayMode && !world.getBlockState(worldPos).isAir()) continue;
 
             Identifier id = Identifier.tryParse(sb.blockId());
             if (id == null || !Registry.BLOCK.containsId(id)) continue;
 
-            Block block = Registry.BLOCK.get(id);
-            BlockState state = block.getDefaultState();
-            state = applyProperties(state, sb.properties(), rotation);
-
-            world.setBlockState(worldPos, state, Block.NOTIFY_ALL | Block.FORCE_STATE);
-
-            if (sb.tileEntityNbt() != null) {
-                BlockEntity be = world.getBlockEntity(worldPos);
-                if (be != null) {
-                    NbtCompound existing = be.createNbt();
-                    NbtCompound te = sb.tileEntityNbt();
-                    for (String key : te.getKeys()) {
-                        if (!key.equals("x") && !key.equals("y") && !key.equals("z")) {
-                            existing.put(key, te.get(key));
-                        }
-                    }
-                    be.readNbt(existing);
-                    be.markDirty();
-                }
+            PlacementEntry entry = new PlacementEntry(sb, worldPos, id);
+            if (isAttached(id.getPath())) {
+                pass2.add(entry);
+            } else {
+                pass1.add(entry);
             }
         }
+
+        // Pass 1: solid blocks — suppress neighbor notifications so mass-placement does not
+        // break already-placed pass-1 blocks via cascading neighbor updates.
+        for (PlacementEntry e : pass1) {
+            placeEntry(e, world, rotation, Block.NOTIFY_LISTENERS | Block.FORCE_STATE);
+        }
+
+        // Pass 2: attached blocks — support surfaces are guaranteed to exist.
+        for (PlacementEntry e : pass2) {
+            placeEntry(e, world, rotation, Block.NOTIFY_ALL | Block.FORCE_STATE);
+        }
+    }
+
+    private static void placeEntry(PlacementEntry e, ServerWorld world, BlockRotation rotation, int flags) {
+        Block block = Registry.BLOCK.get(e.id());
+        BlockState state = block.getDefaultState();
+        state = applyProperties(state, e.sb().properties(), rotation);
+        world.setBlockState(e.pos(), state, flags);
+
+        if (e.sb().tileEntityNbt() != null) {
+            BlockEntity be = world.getBlockEntity(e.pos());
+            if (be != null) {
+                NbtCompound existing = be.createNbt();
+                NbtCompound te = e.sb().tileEntityNbt();
+                for (String key : te.getKeys()) {
+                    if (!key.equals("x") && !key.equals("y") && !key.equals("z")) {
+                        existing.put(key, te.get(key));
+                    }
+                }
+                be.readNbt(existing);
+                be.markDirty();
+            }
+        }
+    }
+
+    /**
+     * Returns true if a block path (no namespace) represents an attached block
+     * that needs an adjacent solid surface.
+     */
+    private static boolean isAttached(String path) {
+        if (ATTACHED_EXACT.contains(path)) return true;
+        if (path.endsWith("_button")) return true;
+        if (path.endsWith("_wall_sign")) return true;
+        if (path.endsWith("_wall_hanging_sign")) return true;
+        return false;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -122,4 +184,6 @@ public final class StructurePlacer {
         }
         return facing;
     }
+
+    private record PlacementEntry(StructureBlock sb, BlockPos pos, Identifier id) {}
 }
