@@ -63,5 +63,16 @@
   "menu.relootplusplus.meta.delay": "Delay",
   "menu.relootplusplus.meta.nbt": "NBT",
   "block.lucky.lucky_block": "Lucky Block",
-  "item.lucky.lucky_block": "Lucky Block"
+  "item.lucky.lucky_block": "Lucky Block",
+  "menu.relootplusplus.tex_gallery.title": "Textures: %s",
+  "menu.relootplusplus.tex_gallery.open": "Browse Textures",
+  "menu.relootplusplus.tex_gallery.select_hint": "Click a texture to preview",
+  "menu.relootplusplus.tex_gallery.category.all": "All",
+  "menu.relootplusplus.tex_gallery.category.blocks": "Blocks",
+  "menu.relootplusplus.tex_gallery.category.items": "Items",
+  "menu.relootplusplus.tex_gallery.category.entity": "Entity",
+  "menu.relootplusplus.tex_gallery.category.gui": "GUI",
+  "menu.relootplusplus.tex_gallery.category.particle": "Particle",
+  "menu.relootplusplus.tex_gallery.category.environment": "Environment",
+  "menu.relootplusplus.tex_gallery.category.other": "Other"
 }

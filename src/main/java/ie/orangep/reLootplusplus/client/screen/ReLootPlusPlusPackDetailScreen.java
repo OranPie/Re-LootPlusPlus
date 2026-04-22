@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Pack detail screen — tabs: Overview / Items / Drops / Structures.
+ * Pack detail screen — tabs: Overview / Items / Drops / Structures / Textures.
  */
 public final class ReLootPlusPlusPackDetailScreen extends Screen {
 
@@ -35,6 +35,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
     private static final int TAB_ITEMS      = 1;
     private static final int TAB_DROPS      = 2;
     private static final int TAB_STRUCTURES = 3;
+    private static final int TAB_TEXTURES   = 4;
 
     private final Screen parent;
     private final AddonPack pack;
@@ -172,6 +173,15 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
                     listWidget.addEntryRaw(new StructureRow(s));
                 }
             }
+            case TAB_TEXTURES -> {
+                // Show a summary row with a "Browse Textures" button action
+                List<AddonResourceIndex.TexEntry> texs = AddonResourceIndex.scanAllTextures(pack);
+                for (AddonResourceIndex.TexEntry e : texs) {
+                    listWidget.addEntryRaw(new TexSummaryRow(e));
+                }
+                actionButton.visible = true;
+                actionButton.setMessage(new TranslatableText("menu.relootplusplus.tex_gallery.open"));
+            }
         }
     }
 
@@ -224,6 +234,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
                 List<LuckyDropLine> drops = data != null ? data.parsedDrops() : List.of();
                 this.client.setScreen(new ReLootPlusPlusDropLinesScreen(this, pack.id(), drops));
             }
+            case TAB_TEXTURES -> this.client.setScreen(new PackTextureGalleryScreen(this, pack));
         }
     }
 
@@ -233,14 +244,16 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
     }
 
     private List<String> tabLabels() {
-        int drops  = data != null ? data.parsedDrops().size() : 0;
-        int items  = AddonResourceIndex.scanItemModels(pack).size();
+        int drops   = data != null ? data.parsedDrops().size() : 0;
+        int items   = AddonResourceIndex.scanItemModels(pack).size();
         int structs = data != null ? data.structureEntries().size() : 0;
+        int texs    = AddonResourceIndex.scanAllTextures(pack).size();
         return List.of(
             "Overview",
             "Items (" + items + ")",
             "Drops (" + drops + ")",
-            "Structures (" + structs + ")"
+            "Structures (" + structs + ")",
+            "Textures (" + texs + ")"
         );
     }
 
@@ -249,6 +262,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
             case TAB_ITEMS      -> new LiteralText("Select item for details");
             case TAB_DROPS      -> new LiteralText("Click row for details · dbl-click for raw");
             case TAB_STRUCTURES -> new LiteralText("Structure placement data");
+            case TAB_TEXTURES   -> new LiteralText("Click 'Browse Textures' to open gallery");
             default             -> null;
         };
     }
@@ -414,6 +428,29 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         @Override public boolean mouseClicked(double mx, double my, int btn) {
             listWidget.selectRaw(this);
             return true;
+        }
+    }
+
+    // ── Texture summary row ───────────────────────────────────────────────
+
+    private final class TexSummaryRow
+            extends AlwaysSelectedEntryListWidget.Entry<TexSummaryRow> {
+        private final AddonResourceIndex.TexEntry entry;
+        TexSummaryRow(AddonResourceIndex.TexEntry e) { this.entry = e; }
+
+        @Override
+        public void render(MatrixStack ms, int idx, int y, int x, int eW, int eH,
+                           int mX, int mY, boolean hov, float dt) {
+            if (hov) LppUi.fillRect(ms, x, y, x + eW, y + eH, LppUi.HOVER_BG);
+            else if (idx % 2 == 0) LppUi.fillRect(ms, x, y, x + eW, y + eH, LppUi.STRIPE);
+            LppUi.stripe(ms, x, y, eH, 0xFF5577AA);
+            textRenderer.drawWithShadow(ms, new LiteralText(entry.name()), x + 8, y + 3, LppUi.C_BODY);
+            textRenderer.draw(ms, "§7" + entry.category() + " · " + entry.namespace(), x + 8, y + 12, 0);
+        }
+
+        @Override public Text getNarration() { return new LiteralText(entry.name()); }
+        @Override public boolean mouseClicked(double mx, double my, int btn) {
+            listWidget.selectRaw(this); return true;
         }
     }
 

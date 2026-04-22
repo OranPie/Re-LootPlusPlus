@@ -63,6 +63,17 @@
   "menu.relootplusplus.meta.delay": "delay",
   "menu.relootplusplus.meta.nbt": "NBT",
   "block.lucky.lucky_block": "幸运方块",
-  "item.lucky.lucky_block": "幸运方块"
+  "item.lucky.lucky_block": "幸运方块",
+  "menu.relootplusplus.tex_gallery.title": "材质浏览: %s",
+  "menu.relootplusplus.tex_gallery.open": "浏览材质",
+  "menu.relootplusplus.tex_gallery.select_hint": "点击材质以预览",
+  "menu.relootplusplus.tex_gallery.category.all": "全部",
+  "menu.relootplusplus.tex_gallery.category.blocks": "方块",
+  "menu.relootplusplus.tex_gallery.category.items": "物品",
+  "menu.relootplusplus.tex_gallery.category.entity": "实体",
+  "menu.relootplusplus.tex_gallery.category.gui": "界面",
+  "menu.relootplusplus.tex_gallery.category.particle": "粒子",
+  "menu.relootplusplus.tex_gallery.category.environment": "环境",
+  "menu.relootplusplus.tex_gallery.category.other": "其他"
 }
 

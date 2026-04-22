@@ -1,10 +1,13 @@
 package ie.orangep.reLootplusplus.client.screen;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawableHelper;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -370,4 +373,28 @@ public final class LppUi extends DrawableHelper {
                                 int colorTop, int colorBot) {
         INST.fillGradient(ms, x1, y1, x2, y2, colorTop, colorBot);
     }
+
+    /**
+     * Draws a pre-loaded addon texture (via {@link ie.orangep.reLootplusplus.client.AddonTextureLoader})
+     * scaled to {@code drawW × drawH}.  Call {@code RenderSystem.enableBlend()} before
+     * if the PNG has transparency.
+     *
+     * @param texId  registered Identifier returned by {@code AddonTextureLoader.getOrLoad()}
+     * @param imgW   native pixel width of the source image
+     * @param imgH   native pixel height of the source image
+     */
+    public static void drawSprite(MatrixStack ms, Identifier texId,
+                                  int x, int y, int drawW, int drawH,
+                                  int imgW, int imgH) {
+        if (texId == null || imgW <= 0 || imgH <= 0) return;
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, texId);
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        ms.push();
+        ms.translate(x, y, 0);
+        ms.scale((float) drawW / imgW, (float) drawH / imgH, 1f);
+        drawTexture(ms, 0, 0, 0, 0, imgW, imgH, imgW, imgH);
+        ms.pop();
+    }
 }
+
