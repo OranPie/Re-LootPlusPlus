@@ -71,6 +71,11 @@ public final class ExternalPackProvider implements ResourcePackProvider {
     }
 
     private boolean hasAssets(Path zipPath) {
+        if (zipPath == null) return false;
+        if (java.nio.file.Files.isDirectory(zipPath)) {
+            // Directory pack: check for an assets/ subfolder
+            return java.nio.file.Files.isDirectory(zipPath.resolve("assets"));
+        }
         try (ZipFile zip = new ZipFile(zipPath.toFile())) {
             // Match both top-level "assets/" and nested "SomePack/assets/" structures
             return zip.stream().anyMatch(e -> {

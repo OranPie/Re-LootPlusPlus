@@ -6,6 +6,9 @@
   "menu.relootplusplus.toggle": "启用/禁用",
   "menu.relootplusplus.details": "查看详情",
   "menu.relootplusplus.item_details": "物品详情",
+  "menu.relootplusplus.view_drops": "✦ 战利品 (%s)",
+  "menu.relootplusplus.drop_lines.title": "幸运掉落 — %s",
+  "menu.relootplusplus.drop_count": "%s 条掉落",
   "menu.relootplusplus.reload": "重载资源",
   "menu.relootplusplus.back": "返回",
   "menu.relootplusplus.copy": "复制",
@@ -25,6 +28,16 @@
   "menu.relootplusplus.sort_kind": "排序：类型",
   "menu.relootplusplus.sort_source": "排序：来源",
   "menu.relootplusplus.sort_raw": "排序：原始行",
+  "menu.relootplusplus.search": "搜索资源包…",
+  "menu.relootplusplus.drops_shortcut": "✦ 战利品",
+  "menu.relootplusplus.tab.overview": "概览",
+  "menu.relootplusplus.tab.items": "物品 (%s)",
+  "menu.relootplusplus.tab.drops": "掉落 (%s)",
+  "menu.relootplusplus.tab.structures": "结构 (%s)",
+  "menu.relootplusplus.filter.all": "全部",
+  "menu.relootplusplus.rawline.search": "搜索…",
+  "menu.relootplusplus.drop_lines.filter": "显示 %s / %s 条掉落  ·  筛选: %s",
+  "menu.relootplusplus.drop_lines.total": "%s 条掉落",
   "menu.relootplusplus.value.none": "无",
   "menu.relootplusplus.field.id": "ID: %s",
   "menu.relootplusplus.field.model": "模型: %s",
@@ -52,3 +65,4 @@
   "block.lucky.lucky_block": "幸运方块",
   "item.lucky.lucky_block": "幸运方块"
 }
+

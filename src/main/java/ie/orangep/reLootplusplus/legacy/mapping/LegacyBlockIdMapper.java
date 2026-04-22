@@ -135,13 +135,13 @@ public final class LegacyBlockIdMapper {
             case 66 -> mapRail(meta);
             case 67 -> mapStairs("minecraft:cobblestone_stairs", meta);
             case 68 -> mapWallSign("minecraft:oak_wall_sign", meta);
-            case 69 -> Result.simple("minecraft:lever");
+            case 69 -> mapLever(meta);
             case 70 -> Result.simple("minecraft:stone_pressure_plate");
             case 71 -> mapDoor("minecraft:iron_door", meta);
             case 72 -> Result.simple("minecraft:oak_pressure_plate");
             case 73, 74 -> Result.simple("minecraft:redstone_ore");
             case 75, 76 -> mapRedstoneTorch(meta, blockId == 76);
-            case 77 -> Result.simple("minecraft:stone_button");
+            case 77 -> mapButton("minecraft:stone_button", meta);
             case 78 -> mapSnowLayer(meta);
             case 79 -> Result.simple("minecraft:ice");
             case 80 -> Result.simple("minecraft:snow_block");
@@ -206,7 +206,7 @@ public final class LegacyBlockIdMapper {
             case 140 -> Result.simple("minecraft:flower_pot");
             case 141 -> Result.withProps("minecraft:carrots", "age", "7");
             case 142 -> Result.withProps("minecraft:potatoes", "age", "7");
-            case 143 -> Result.simple("minecraft:oak_button");
+            case 143 -> mapButton("minecraft:oak_button", meta);
             case 144 -> Result.simple("minecraft:skeleton_skull");
             case 145 -> mapAnvil(meta);
             case 146 -> mapChest(meta, "minecraft:trapped_chest");
@@ -545,6 +545,81 @@ public final class LegacyBlockIdMapper {
             boolean open = (meta & 4) != 0;
             return Result.withProps(blockId, "facing", facing, "half", "lower", "hinge", "left", "open", String.valueOf(open), "powered", "false");
         }
+    }
+
+    /**
+     * 1.8.9 lever metadata → 1.18.2 blockstate properties.
+     *
+     * <p>Metadata encoding:
+     * <ul>
+     *   <li>bits 0-2 (meta & 7): orientation
+     *     <ul>
+     *       <li>0 = floor, pointing south-north (ceiling east alias)</li>
+     *       <li>1 = east wall  (support block to the west)</li>
+     *       <li>2 = west wall  (support block to the east)</li>
+     *       <li>3 = south wall (support block to the north)</li>
+     *       <li>4 = north wall (support block to the south)</li>
+     *       <li>5 = floor, pointing east-west</li>
+     *       <li>6 = ceiling, pointing east-west (alias)</li>
+     *       <li>7 = ceiling, pointing south-north</li>
+     *     </ul>
+     *   </li>
+     *   <li>bit 3 (meta & 8): powered</li>
+     * </ul>
+     *
+     * <p>1.18.2 lever properties: face=(FLOOR|WALL|CEILING), facing=(NORTH|SOUTH|EAST|WEST), powered.
+     * For face=WALL: 'facing' is the direction the lever faces away from the wall
+     * (i.e. opposite of the supporting block side).
+     */
+    private static Result mapLever(int meta) {
+        boolean powered = (meta & 8) != 0;
+        String face;
+        String facing;
+        switch (meta & 7) {
+            case 0 -> { face = "FLOOR";   facing = "SOUTH"; }
+            case 1 -> { face = "WALL";    facing = "EAST"; }
+            case 2 -> { face = "WALL";    facing = "WEST"; }
+            case 3 -> { face = "WALL";    facing = "SOUTH"; }
+            case 4 -> { face = "WALL";    facing = "NORTH"; }
+            case 5 -> { face = "FLOOR";   facing = "EAST"; }
+            case 6 -> { face = "CEILING"; facing = "EAST"; }
+            default -> { face = "CEILING"; facing = "SOUTH"; } // 7
+        }
+        return Result.withProps("minecraft:lever",
+            "face", face.toLowerCase(java.util.Locale.ROOT),
+            "facing", facing.toLowerCase(java.util.Locale.ROOT),
+            "powered", String.valueOf(powered));
+    }
+
+    /**
+     * 1.8.9 button metadata → 1.18.2 blockstate properties.
+     *
+     * <p>Bits 0-2 (meta & 7):
+     * <ul>
+     *   <li>0 = floor (pointing down → face=FLOOR)</li>
+     *   <li>1 = east wall</li>
+     *   <li>2 = west wall</li>
+     *   <li>3 = south wall</li>
+     *   <li>4 = north wall</li>
+     *   <li>5 = ceiling</li>
+     * </ul>
+     * Bit 3 (meta & 8): powered.
+     */
+    private static Result mapButton(String blockId, int meta) {
+        boolean powered = (meta & 8) != 0;
+        String face;
+        String facing;
+        switch (meta & 7) {
+            case 0 -> { face = "floor";   facing = "south"; }
+            case 1 -> { face = "wall";    facing = "east"; }
+            case 2 -> { face = "wall";    facing = "west"; }
+            case 3 -> { face = "wall";    facing = "south"; }
+            case 4 -> { face = "wall";    facing = "north"; }
+            case 5 -> { face = "ceiling"; facing = "south"; }
+            default -> { face = "floor";  facing = "south"; }
+        }
+        return Result.withProps(blockId,
+            "face", face, "facing", facing, "powered", String.valueOf(powered));
     }
 
     private static Result mapLadder(int meta) {
