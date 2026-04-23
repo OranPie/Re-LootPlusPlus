@@ -7,7 +7,8 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.registry.Registry;
 
 public final class EntityRegistrar {
-    public static final Identifier THROWN_ID = new Identifier("re-lootplusplus", "loot_thrown");
+    /** Registered under the {@code lootplusplus} namespace to match original Loot++ entity IDs. */
+    public static final Identifier THROWN_ID = new Identifier("lootplusplus", "thrown_item");
     public static final EntityType<LootThrownItemEntity> THROWN_ENTITY = Registry.register(
         Registry.ENTITY_TYPE,
         THROWN_ID,

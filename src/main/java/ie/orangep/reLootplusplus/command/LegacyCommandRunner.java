@@ -430,7 +430,7 @@ public final class LegacyCommandRunner {
             return ExecResult.success(0);
         }
         String entityId = tokens.get(1);
-        // Normalize legacy entity IDs (e.g. lootplusplus.ThrownItem → re-lootplusplus:loot_thrown)
+        // Normalize legacy entity IDs (e.g. lootplusplus.ThrownItem → lootplusplus:thrown_item)
         entityId = LegacyEntityIdFixer.normalizeEntityId(entityId, ctx.warnReporter(),
             ctx.sourceLoc() == null ? null : ctx.sourceLoc().formatShort());
         BlockPos origin = ctx.origin();

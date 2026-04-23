@@ -50,8 +50,10 @@ public final class LegacyEntityIdFixer {
         register("CaveSpider", "minecraft:cave_spider");
         register("MushroomCow", "minecraft:mooshroom");
         register("Ozelot", "minecraft:ocelot");
-        register("lootplusplus.ThrownItem", "re-lootplusplus:loot_thrown");
-        register("lootplusplus:thrown_item", "re-lootplusplus:loot_thrown");
+        register("lootplusplus.ThrownItem", "lootplusplus:thrown_item");
+        register("lootplusplus:thrown_item", "lootplusplus:thrown_item");
+        // Legacy re-lootplusplus namespace (old saves / old addon references)
+        register("re-lootplusplus:loot_thrown", "lootplusplus:thrown_item");
         register("potioncore.CustomPotion", "potioncore:custom_potion");
         register("LuckyProjectile", "lucky:lucky_projectile");
         register("luckyprojectile", "lucky:lucky_projectile");

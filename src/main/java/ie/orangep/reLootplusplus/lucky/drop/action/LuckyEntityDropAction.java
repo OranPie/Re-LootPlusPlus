@@ -114,7 +114,14 @@ public final class LuckyEntityDropAction {
             entity.refreshPositionAndAngles(spawnPos.x, spawnPos.y, spawnPos.z, entity.getYaw(), entity.getPitch());
         }
 
-        ctx.world().spawnEntity(entity);
+        if (!entity.isRemoved()) {
+            ctx.world().spawnEntity(entity);
+        } else {
+            ctx.warnReporter().warn("LuckyEntityDrop",
+                "entity was discarded before spawn (invalid NBT/item?) — skipping",
+                ctx.sourceLoc());
+            return;
+        }
         applyPostSpawn(entity, drop, evalCtx);
     }
 
@@ -188,9 +195,14 @@ public final class LuckyEntityDropAction {
             entity.refreshPositionAndAngles(spawnPos.x, spawnPos.y, spawnPos.z, entity.getYaw(), entity.getPitch());
         }
 
-        ctx.world().spawnEntity(entity);
-
-        // Apply post-spawn attributes
+        if (!entity.isRemoved()) {
+            ctx.world().spawnEntity(entity);
+        } else {
+            ctx.warnReporter().warn("LuckyEntityDrop",
+                "entity was discarded before spawn (invalid NBT/item?) — skipping",
+                ctx.sourceLoc());
+            return;
+        }
         applyPostSpawn(entity, drop, evalCtx);
     }
 

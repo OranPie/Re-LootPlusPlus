@@ -133,7 +133,7 @@ public final class LuckyDropEngine {
         if (!doLog && !hasPlayer) return;
 
         String type    = drop.isGroup() ? "group" : drop.type();
-        String id      = drop.isGroup() ? "(group-" + (drop.groupEntries() != null ? drop.groupEntries().size() : 0) + ")" : (drop.rawId() != null ? drop.rawId() : "(none)");
+        String id      = buildDropId(drop, doLog);
         String pos     = ctx.pos().getX() + ", " + ctx.pos().getY() + ", " + ctx.pos().getZ();
         String luck    = (ctx.luck() >= 0 ? "+" : "") + ctx.luck();
         float  weight  = LuckyDropRoller.computeWeight(drop.luckWeight(), ctx.luck());
@@ -152,6 +152,17 @@ public final class LuckyDropEngine {
             Log.debug("LuckyDrop", line3);
             Log.debug("LuckyDrop", line4);
             Log.debug("LuckyDrop", line5);
+            // In debug mode, expand group entries
+            if (drop.isGroup() && drop.groupEntries() != null) {
+                Log.debug("LuckyDrop", "  ╠══ Group entries (" + drop.groupEntries().size() + ") ══");
+                for (int i = 0; i < drop.groupEntries().size(); i++) {
+                    LuckyDropLine e = drop.groupEntries().get(i);
+                    String eType = e.isGroup() ? "group" : e.type();
+                    String eId   = e.rawId() != null ? e.rawId() : "(none)";
+                    Log.debug("LuckyDrop", String.format("  ║  [%d] type=%-8s  id=%s", i, eType, eId));
+                }
+                Log.debug("LuckyDrop", "  ╚═══════════════════════════════════════════");
+            }
         }
 
         // Send chat to player with Minecraft color codes
@@ -163,6 +174,7 @@ public final class LuckyDropEngine {
                 case "block"     -> "§6";
                 case "structure" -> "§5";
                 case "nothing"   -> "§8";
+                case "group"     -> "§d";
                 default          -> "§f";
             };
             String msg = "§7[§aLucky Drop§7]" + dryTag + " "
@@ -174,7 +186,40 @@ public final class LuckyDropEngine {
             } catch (Exception ignored) {
                 // Don't crash on display failure
             }
+            // In debug mode, send each group entry as a follow-up chat line
+            if (doLog && drop.isGroup() && drop.groupEntries() != null) {
+                for (int i = 0; i < drop.groupEntries().size(); i++) {
+                    LuckyDropLine e = drop.groupEntries().get(i);
+                    String eType = e.isGroup() ? "group" : e.type();
+                    String eId   = e.rawId() != null ? e.rawId() : "(none)";
+                    try {
+                        ctx.player().sendMessage(new LiteralText(
+                            "§7  [" + i + "] §d" + eType + "§7: §f" + shorten(eId, 50)), false);
+                    } catch (Exception ignored) {}
+                }
+            }
         }
+    }
+
+    /** Builds the display id for a drop. In debug mode, groups show their entry summary. */
+    private static String buildDropId(LuckyDropLine drop, boolean debug) {
+        if (!drop.isGroup()) {
+            return drop.rawId() != null ? drop.rawId() : "(none)";
+        }
+        int size = drop.groupEntries() != null ? drop.groupEntries().size() : 0;
+        if (!debug || drop.groupEntries() == null || size == 0) {
+            return "(group-" + size + ")";
+        }
+        // Show first 2 entry types as a preview
+        StringBuilder sb = new StringBuilder("group[");
+        for (int i = 0; i < Math.min(2, size); i++) {
+            if (i > 0) sb.append(',');
+            LuckyDropLine e = drop.groupEntries().get(i);
+            sb.append(e.isGroup() ? "grp" : e.type());
+        }
+        if (size > 2) sb.append("+").append(size - 2).append("…");
+        sb.append("]");
+        return sb.toString();
     }
 
     private static String shorten(String s, int max) {
