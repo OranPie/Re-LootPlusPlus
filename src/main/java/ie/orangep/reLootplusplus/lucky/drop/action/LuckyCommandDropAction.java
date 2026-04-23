@@ -1,8 +1,10 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
+import ie.orangep.reLootplusplus.command.exec.ExecContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
 import ie.orangep.reLootplusplus.lucky.template.LuckyTemplateVars;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
@@ -45,6 +47,19 @@ public final class LuckyCommandDropAction {
         // Strip leading slash if present
         if (command.startsWith("/")) command = command.substring(1);
 
+        if (isTeleportCommand(command)) {
+            ExecContext execCtx = new ExecContext(
+                ctx.world(),
+                ctx.pos(),
+                ctx.player(),
+                ctx.world().getRandom(),
+                ctx.sourceLoc(),
+                ctx.warnReporter()
+            );
+            RuntimeState.commandRunner().run(command, execCtx);
+            return;
+        }
+
         ServerCommandSource source = ctx.world().getServer().getCommandSource()
             .withWorld(ctx.world())
             .withPosition(Vec3d.ofCenter(ctx.pos()))
@@ -66,6 +81,22 @@ public final class LuckyCommandDropAction {
         } catch (Exception e) {
             ctx.warnReporter().warn("LuckyCommandDrop", "error executing command '" + preview(command) + "': " + e.getMessage(), ctx.sourceLoc());
         }
+    }
+
+    private static boolean isTeleportCommand(String command) {
+        if (command == null) {
+            return false;
+        }
+        String trimmed = command.stripLeading();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        int end = 0;
+        while (end < trimmed.length() && !Character.isWhitespace(trimmed.charAt(end))) {
+            end++;
+        }
+        String verb = trimmed.substring(0, end);
+        return "tp".equalsIgnoreCase(verb) || "teleport".equalsIgnoreCase(verb);
     }
 
     private static String preview(String s) {

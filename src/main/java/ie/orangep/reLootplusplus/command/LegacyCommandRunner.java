@@ -81,6 +81,7 @@ public final class LegacyCommandRunner {
             case "execute" -> runExecute(tokens, ctx);
             case "testfor" -> runTestfor(tokens, ctx);
             case "summon" -> runSummon(tokens, ctx);
+            case "tp", "teleport" -> runTeleport(tokens, ctx);
             case "setblock" -> runSetblock(tokens, ctx);
             case "kill" -> runKill(tokens, ctx);
             case "enchant" -> runEnchant(tokens, ctx);
@@ -478,6 +479,76 @@ public final class LegacyCommandRunner {
         }
         boolean spawned = ctx.world().spawnEntity(entity);
         return ExecResult.success(spawned ? 1 : 0);
+    }
+
+    private ExecResult runTeleport(List<String> tokens, ExecContext ctx) {
+        if (tokens.size() < 2) {
+            ctx.warnReporter().warn("LegacyCommand", "teleport arity", ctx.sourceLoc());
+            return ExecResult.success(0);
+        }
+
+        int index = 1;
+        List<Entity> targets;
+        String firstArg = tokens.get(index);
+        boolean hasExplicitTarget = !looksLikeCoordinateToken(firstArg)
+            || ctx.world().getServer().getPlayerManager().getPlayer(firstArg) != null;
+
+        if (hasExplicitTarget) {
+            targets = parseTargets(firstArg, ctx);
+            if (targets.isEmpty()) {
+                return ExecResult.success(0);
+            }
+            index++;
+            if (tokens.size() <= index) {
+                ctx.warnReporter().warn("LegacyCommand", "teleport destination missing", ctx.sourceLoc());
+                return ExecResult.success(0);
+            }
+        } else {
+            Entity sender = ctx.sender();
+            if (sender == null) {
+                ctx.warnReporter().warn("LegacyCommand", "teleport missing source entity", ctx.sourceLoc());
+                return ExecResult.success(0);
+            }
+            targets = List.of(sender);
+        }
+
+        if (tokens.size() > index + 2
+            && looksLikeCoordinateToken(tokens.get(index))
+            && looksLikeCoordinateToken(tokens.get(index + 1))
+            && looksLikeCoordinateToken(tokens.get(index + 2))) {
+            double x = resolveCoordDouble(ctx.origin().getX(), tokens.get(index), ctx.origin().getX(), ctx);
+            double y = resolveCoordDouble(ctx.origin().getY(), tokens.get(index + 1), ctx.origin().getY(), ctx);
+            double z = resolveCoordDouble(ctx.origin().getZ(), tokens.get(index + 2), ctx.origin().getZ(), ctx);
+            index += 3;
+
+            Float yaw = null;
+            Float pitch = null;
+            if (tokens.size() > index) {
+                yaw = (float) parseDouble(tokens.get(index), 0.0, ctx);
+                index++;
+            }
+            if (tokens.size() > index) {
+                pitch = (float) parseDouble(tokens.get(index), 0.0, ctx);
+            }
+
+            for (Entity entity : targets) {
+                float useYaw = yaw != null ? yaw : entity.getYaw();
+                float usePitch = pitch != null ? pitch : entity.getPitch();
+                entity.refreshPositionAndAngles(x, y, z, useYaw, usePitch);
+            }
+            return ExecResult.success(targets.size());
+        }
+
+        List<Entity> destination = parseTargets(tokens.get(index), ctx);
+        if (destination.isEmpty()) {
+            ctx.warnReporter().warn("LegacyCommand", "teleport destination missing " + tokens.get(index), ctx.sourceLoc());
+            return ExecResult.success(0);
+        }
+        Entity dest = destination.get(0);
+        for (Entity entity : targets) {
+            entity.refreshPositionAndAngles(dest.getX(), dest.getY(), dest.getZ(), dest.getYaw(), dest.getPitch());
+        }
+        return ExecResult.success(targets.size());
     }
 
     private ExecResult runSetblock(List<String> tokens, ExecContext ctx) {
@@ -884,6 +955,22 @@ public final class LegacyCommandRunner {
             }
             return true;
         } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean looksLikeCoordinateToken(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        char first = value.charAt(0);
+        if (first == '~' || first == '^') {
+            return true;
+        }
+        try {
+            Double.parseDouble(value);
+            return true;
+        } catch (NumberFormatException ignored) {
             return false;
         }
     }
