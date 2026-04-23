@@ -1,6 +1,7 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.text.LegacyText;
 import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.nbt.NbtCompound;
@@ -20,6 +21,7 @@ public final class LegacyItemNbtFixer {
         if (item == null) {
             return;
         }
+        Log.trace("Legacy", "ItemNbt: fix stack context={}", context);
         NbtCompound tag = item;
         if (item.contains("tag", NbtElement.COMPOUND_TYPE)) {
             tag = item.getCompound("tag");
@@ -67,6 +69,7 @@ public final class LegacyItemNbtFixer {
         }
         if (!normalized.equals(trimmed)) {
             warn(reporter, "LegacyAttribute", "mapped '" + trimmed + "' -> '" + normalized + "'" + formatContext(context));
+            Log.trace("Legacy", "AttributeId: {} → {}", trimmed, normalized);
         }
         return normalized;
     }

@@ -1,6 +1,7 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
@@ -34,6 +35,7 @@ public final class LegacyTileEntityNbtFixer {
     public static void fix(NbtCompound te, LegacyWarnReporter reporter, SourceLoc loc) {
         if (te == null) return;
         String id = te.getString("id");
+        Log.trace("Legacy", "TileEntityNbt: fix id={}", id);
         switch (id) {
             case "minecraft:mob_spawner" -> fixSpawner(te, reporter, loc);
             case "minecraft:chest",
@@ -98,6 +100,7 @@ public final class LegacyTileEntityNbtFixer {
         // ── 2. Build modern SpawnData ─────────────────────────────────────────
         if (baseEntityId != null && baseEntityNbt != null) {
             // Fix the entity id in the copied NBT
+            Log.trace("Legacy", "Spawner: migrating SpawnData EntityId={}", baseEntityId);
             LegacyEntityIdFixer.fixEntityId(baseEntityNbt, reporter, context + " SpawnData");
             NbtCompound newSpawnData = new NbtCompound();
             newSpawnData.put("entity", baseEntityNbt);

@@ -1,6 +1,7 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,6 +62,9 @@ public final class LegacyBlockIdMapper {
     public static String mapTileEntityId(String legacyId) {
         if (legacyId == null) return "minecraft:chest";
         String mapped = TILE_ENTITY_MAP.get(legacyId);
+        if (mapped != null && !mapped.equals(legacyId)) {
+            Log.trace("Legacy", "TileEntityId: {} → {}", legacyId, mapped);
+        }
         return mapped != null ? mapped : legacyId;
     }
 

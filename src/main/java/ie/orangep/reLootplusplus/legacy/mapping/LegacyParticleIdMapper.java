@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.minecraft.util.Identifier;
 
@@ -59,6 +60,7 @@ public final class LegacyParticleIdMapper {
             if (reporter != null) {
                 reporter.warnOnce("LegacyParticle", "mapped " + trimmed + " -> " + direct, loc);
             }
+            Log.trace("Legacy", "ParticleId: {} → {}", trimmed, direct);
             return direct;
         }
         String namespace = "minecraft";

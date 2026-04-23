@@ -1,6 +1,7 @@
 package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 
 import java.util.HashMap;
@@ -65,6 +66,7 @@ public final class LegacyEnchantmentIdMapper {
             if (warnReporter != null) {
                 warnReporter.warnOnce("LegacyEnchant", "numeric id " + trimmed + " -> " + mapped, loc);
             }
+            Log.trace("Legacy", "EnchantId: numeric {} → {}", trimmed, mapped);
             return mapped;
         }
         if (!trimmed.contains(":")) {
@@ -72,6 +74,7 @@ public final class LegacyEnchantmentIdMapper {
             if (warnReporter != null) {
                 warnReporter.warnOnce("LegacyEnchant", "assumed namespace for " + trimmed, loc);
             }
+            Log.trace("Legacy", "EnchantId: {} → {} (namespace assumed)", trimmed, assumed);
             return assumed;
         }
         return trimmed.toLowerCase(Locale.ROOT);

@@ -3,6 +3,7 @@ package ie.orangep.reLootplusplus.legacy.mapping;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.Identifier;
@@ -48,6 +49,7 @@ public final class LegacyChestTypeMapper {
                     warnReporter.warn("LegacyChestType", "bad mapping " + ct + " -> " + target, loc);
                     return null;
                 }
+                Log.trace("Legacy", "ChestType: {} → {}", ct, id);
                 return id;
             }
             // Custom addon type: generate a deterministic synthetic identifier

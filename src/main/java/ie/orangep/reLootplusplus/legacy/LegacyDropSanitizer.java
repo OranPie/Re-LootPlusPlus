@@ -18,6 +18,7 @@ public final class LegacyDropSanitizer {
         if (raw == null || raw.isEmpty()) {
             return raw;
         }
+        Log.trace("Legacy", "DropSanitize: in  '{}'", preview(raw));
         SANITIZE_CONTEXT.set(preview(raw));
         raw = fixAttrTypos(raw, reporter);
         raw = fixInlineLegacyCommentSuffix(raw, reporter);
@@ -64,6 +65,7 @@ public final class LegacyDropSanitizer {
         if (!raw.equals(sanitized)) {
             warnOnce(reporter, "LuckyDropSanitize", preview(raw) + " -> " + preview(sanitized));
         }
+        Log.trace("Legacy", "DropSanitize: out '{}'", preview(sanitized));
         SANITIZE_CONTEXT.remove();
         return sanitized;
     }

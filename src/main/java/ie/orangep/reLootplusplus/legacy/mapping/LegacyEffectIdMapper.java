@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.legacy.mapping;
 
 import ie.orangep.reLootplusplus.config.CustomRemapStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import net.minecraft.util.Identifier;
 
@@ -85,10 +86,12 @@ public final class LegacyEffectIdMapper {
             if (warnReporter != null) {
                 warnReporter.warnOnce("LegacyEffect", "numeric id " + trimmed + " -> " + mapped, loc);
             }
+            Log.trace("Legacy", "EffectId: numeric {} → {}", trimmed, mapped);
         }
         mapped = applyNamespaceRemap(mapped, warnReporter, loc);
         Identifier parsed = Identifier.tryParse(mapped);
         if (parsed != null) {
+            Log.trace("Legacy", "EffectId: {} → {}", raw.trim(), parsed);
             return parsed;
         }
         if (!mapped.contains(":")) {

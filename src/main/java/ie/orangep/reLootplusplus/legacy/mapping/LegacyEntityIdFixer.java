@@ -282,6 +282,9 @@ public final class LegacyEntityIdFixer {
             normalized = mapped;
         }
         normalized = resolveDuplicateItemId(normalized, reporter, context);
+        if (!normalized.equals(rawId.trim())) {
+            Log.trace("Legacy", "ItemId: {} → {}", rawId.trim(), normalized);
+        }
         return normalized;
     }
 
