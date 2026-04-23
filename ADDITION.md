@@ -1,3 +1,23 @@
+# Re-LootPlusPlus — Additional Format Specs
+
+> **This document covers additional Loot++ 1.8.9 format specifications** not covered in PARSER.md:
+> command chain splitting rules, record format, Lucky Block drop format extensions,
+> lppcondition semantics, and item/block addition type coverage.
+>
+> **Implementation classes:**
+> - `command/exec/CommandChain.java` — top-level `;` split; warns on `&&`/`||`
+> - `config/loader/RecordsLoader.java` — records.txt format
+> - `lucky/drop/LuckyDropParser.java` — Lucky drop `key=value` attr format
+> - `lucky/attr/LuckyAttrParser.java` — bare `@chance` normalization + WARN
+>
+> **Item addition types implemented:** generic, food, sword, axe, shovel, pickaxe, hoe, bow, armor
+>
+> **Block addition types implemented:** generic, plant, crop, cake
+>
+> **Deferred:** bows/guns/multitools full behavior; buttons/pressure_plates/slabs/stairs/panes/walls.
+>
+> ---
+>
 可以开始实现了。你现在手上已经够做出 **MVP（能跑你这两包 + 大量 1.8 luckyblocks addon）**：结构、parser 语法、selector、command 子集语义都有了。
 
 不过在你“只看我输出、不看 jar”的前提下，我建议你**再补 6 个点**（都是“实现时必踩坑/不补会偏离 1:1”的），我把它们写成**必须项**和**可后置项**，你可以直接照做，不需要再反编译。

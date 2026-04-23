@@ -1,3 +1,21 @@
+# Re-LootPlusPlus — Legacy Selector & Command Semantics
+
+> **This is the Loot++ 1.8.9 legacy selector and command runner spec.**
+> It defines the precise semantics (inputs → side effects → successCount) for the 1.8 command subset
+> and the legacy `@p/@a/@r/@e` selector syntax with old parameters (`r=`, `rm=`, `score_*`, `c=`, etc.).
+>
+> **Implementation classes:**
+> - `legacy/selector/LegacySelectorParser.java` — parses and evaluates legacy selectors
+> - `legacy/selector/SelectorContext.java` — evaluation context (world, origin, random)
+> - `command/LegacyCommandRunner.java` — interprets the 1.8 command subset
+> - `command/exec/CommandChain.java` — splits on top-level `;`; warns on `&&`/`||`
+> - `command/exec/ExecResult.java` — carries `successCount`
+>
+> All legacy selector parameters and remapped command behaviors must call
+> `LegacyWarnReporter.warn()` or `warnOnce()`. Never silent.
+>
+> ---
+>
 下面给你两份**可直接开写**的规格：
 
 1. **LegacySelectorParser 规范**（把 1.8 选择器 + `r=`/`score_*` 等老参数在 1.20.1 解释成实体集合）

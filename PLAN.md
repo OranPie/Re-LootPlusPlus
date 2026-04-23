@@ -1,57 +1,77 @@
-# Plan (Loot++ 1.20.1 Fabric Compat)
+# Re-LootPlusPlus — Implementation Notes
 
-## Goals
-- Reproduce Loot++ 1.8.9 behavior in 1.20.1 without modifying addon zips.
-- Ensure all legacy syntax/IDs/params map with WARN (warnOnce allowed, never silent).
-- Maintain 1:1 parser behavior (split rules, defaults, clamps, edge cases).
+> **Status: Implementation complete.**
+> This file was originally the staged build plan. It is now kept as architectural reference and a log of key decisions.
 
-## Milestones & Order (lowest rework risk)
-1) Pack discovery + indexing
-   - Scan addon zips and build PackIndex with SourceLoc (zip/path/line/raw).
-   - Read config text lines exactly (no trim before comment check; ignore empty lines only).
-2) Strict parser layer
-   - Implement split rules (Java String.split semantics; limit usage; drop trailing empties).
-   - Implement per-file parsers per PARSER.md (block/entity drops, effects, chest/fishing, world_gen, item/block additions).
-   - Enforce legacy WARN at parse time (meta, old ids, wildcard, old names, NBT leniency).
-3) Legacy warn system
-   - Centralized LegacyWarnReporter + warnOnce keying by type + SourceLoc.
-   - All mappings (id/meta/selector/sound/effect/nbt) go through LegacyCompat.
-4) LegacySelectorParser
-   - Support @p/@a/@r/@e with legacy args (r/rm/score_* etc) and strict eval order.
-   - Stable sorting, c semantics, and WARN for legacy params/negation/unknown.
-5) LegacyCommandRunner (subset)
-   - Implement tokenization with NBT/selector-aware parsing.
-   - Implement commands used by packs: lppcondition/lppeffect/clear/effect/playsound/scoreboard/execute/testfor/summon/setblock/kill/enchant/gamerule.
-   - Maintain successCount semantics (clear = removed item count; execute sums; others = affected targets).
-   - CommandChain: split on top-level ';' only (warn on &&/|| as literal).
-6) Registry & content bootstrap
-   - Register items/blocks/entities/blockEntities/itemGroup at init only.
-   - Build runtime definitions for thrown items + command_trigger_block.
-7) Runtime index + hooks
-   - Build RuntimeIndex (trigger -> id -> rules) for fast tick scans.
-   - Install Fabric events for tick/use/attack/break/loot/worldgen; mixin only if needed.
-8) Resource pack injection (client)
-   - Inject assets/lootplusplus/** from addon zip via ResourcePackProvider.
-9) Reload
-   - /reload rebuilds runtime index and rules only; no new registries.
+---
 
-## Required Behavior Constraints
-- Legacy parameters and mappings always WARN (never silent).
-- Parsing failures are per-line WARN + skip (never crash whole pack).
-- successCount definitions fixed per ADAPTION/ADDITION.
-- DropGroup semantics: only first entry weight counts; if selected, execute all entries.
+## What was built
 
-## Regression Targets (initial)
-- Astral: lppcondition clear + score selectors + playsound/effect chain.
-- Plural: thrown chaos ball command drops with r= selectors and legacy effect names.
-- command_trigger_block world_gen line with CommandList NBT.
+Re-LootPlusPlus is a Minecraft **1.18.2 Fabric** mod that:
 
-## Open TODOs (verify later)
-- fishing_amounts exact grammar (if needed, confirm bytecode or add spec).
-- entity_drops removing/add spec details (if needed, confirm bytecode).
-- Legacy mappings json (sound/effect/item/block/entity) and chest_type mapping table.
-- Addition 2 backlog:
-  - Block_additions: support additional raw types (buttons, pressure_plates, slabs/stairs/panes/walls/etc) beyond generic/plants/crops/cakes.
-  - LuckyBlock resource pack: confirm whole-zip mount order vs user packs.
-  - Item additions: bows/guns/multitools full behavior (projectiles/ammo/tool types) beyond registration.
-  - Effect mappings: expand numeric/legacy effect name tables as needed.
+1. **Natively reimplements Loot++ 1.8.9 behavior** — scans addon zips/folders, parses `config/**/*.txt`, wires rules into Fabric events. No modification of addon zips.
+2. **Natively reimplements Lucky Block** — registers `lucky:lucky_block`, `lucky:lucky_sword`, `lucky:lucky_bow`, `lucky:lucky_potion` under the `lucky:` namespace. Parses `drops.txt`/`bow_drops.txt` from Lucky addon zips. No dependency on the Lucky Block Fabric jar at runtime.
+3. **Provides a full in-game UI** — accessible via "✦ Loot++" button injected into the pause menu.
+
+---
+
+## Architecture summary
+
+See `STRUCTURE.md` for the full package tree. Key architectural points:
+
+- **`Bootstrap.java`** is the single orchestrator. Nine sequential phases: load config → discover packs → index → parse rules → register content → world gen → build RuntimeIndex → install hooks → export diagnostics.
+- **Registry lock**: item/block/entity registration happens only during phase 5. `/reload` rebuilds only `RuntimeIndex` and rules.
+- **`LegacyWarnReporter`**: all 1.8→1.18.2 adaptations must call `warn()` or `warnOnce()`. Never silent.
+- **`DebugFileWriter`**: when `debugFileEnabled=true` and `logDetailLevel≥detail`, all debug/trace lines are written to `<exportDir>/debug-<timestamp>.log` regardless of console filter level.
+
+---
+
+## Config
+
+Runtime config at `.minecraft/config/relootplusplus.json`. 25 fields in four categories:
+
+- **Core**: `dryRun`, `exportReports`, `exportRawLines`, `exportDir`, `extraAddonDirs`, `duplicateStrategy`, `potioncoreNamespace`, `skipMissingEntityRenderers`, `injectResourcePacks`, `disabledAddonPacks`
+- **Logging**: `logWarnings`, `logLegacyWarnings`, `logDebug`, `logDetailLevel`, `logDetailFilters`, `legacyWarnConsoleLimitPerType`, `legacyWarnConsoleSummary`, `debugFileEnabled`, `debugFileMaxLines`
+- **Drop engine**: `luckModifier`, `defaultLuck`, `commandDropEnabled`, `dropChatEnabled`
+- **Tick / world**: `tickIntervalTicks`, `enabledTriggerTypes`, `structureMaxDimension`, `scanModsDir`, `naturalGenEnabled`, `legacySanitizeEnabled`
+
+---
+
+## Behavioral constraints (fixed)
+
+### DropGroup weight semantics
+Only the first entry's weight in a `%%%%%`-separated group participates in the weighted roll. If the group is selected, **all** entries execute. 1:1 match of Loot++ 1.8.9.
+
+### successCount definitions
+| Command | successCount |
+|---|---|
+| `clear` | actual number of items removed |
+| `effect`, `playsound`, `scoreboard`, `kill`, `testfor` | number of targets successfully acted on |
+| `execute` | sum of sub-command successCounts across all targets |
+| `summon`, `setblock`, `gamerule` | 1 on success, 0 on failure |
+| `lppcondition` | branch's successCount |
+
+### Tick scan order (deterministic)
+`held` → `wearing_armour` → `in_inventory` → `standing_on_block` → `inside_block`
+
+---
+
+## Known gaps / deferred items
+
+- `fishing_amounts` grammar: partially implemented; edge cases not fully verified against JAR bytecode.
+- `entity_drops` removing spec: basic support; complex selector interactions may differ from 1.8.9.
+- Item additions: bows/guns/multitools — registration works; full projectile/ammo behavior is partial.
+- Block additions: additional raw types (buttons, pressure plates, slabs, stairs, panes, walls) beyond generic/plants/crops/cakes are not implemented.
+- `.luckystruct` structure format: read support exists but placement fidelity may differ from original.
+
+---
+
+## Spec documents
+
+The other markdown files describe the Loot++ 1.8.9 behavioral spec extracted from JAR bytecode analysis. They define what this mod implements against:
+
+- `PARSER.md` — Config file grammar (BNF/EBNF for every `config/*.txt` format)
+- `ADAPTION.md` — Legacy selector parser and command runner semantics
+- `INJECTION.md` — Fabric injection strategy and lifecycle constraints
+- `REFERENCE.md` — Hook matrix, execution order, and parse/execute examples
+- `ADDITION.md` — Additional format specs (command chains, record format, etc.)

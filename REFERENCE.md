@@ -1,3 +1,24 @@
+# Re-LootPlusPlus — Hook Matrix & Examples
+
+> **This document provides the hook matrix, execution order, and annotated parse/execute examples**
+> for the Loot++ 1.8.9 config formats as implemented in Re-LootPlusPlus.
+>
+> **Implemented hooks** (in `hooks/`):
+> - `ServerTickHook` — held / wearing_armour / in_inventory / standing_on_block / inside_block
+> - `UseItemHook` — right-click item trigger
+> - `AttackHook` — hitting_entity_to_entity trigger
+> - `ThrownUseHook` — thrown-item impact
+> - `BlockBreakHook` — block_drops trigger
+> - `EntityDeathHook` — entity_drops trigger
+> - `ChestLootHook` — chest_content injection via `LootManagerMixin`
+>
+> **Tick scan order (fixed for determinism):**
+> `held` → `wearing_armour` → `in_inventory` → `standing_on_block` → `inside_block`
+>
+> The examples below use real lines from Astral and Plural Lucky Block addon packs.
+>
+> ---
+>
 下面按你的要求做三件事：
 
 1. **把开发需要的“其他参考/资料点”列清单**（你现在已有 structure + parser，但真正落地还缺这些）

@@ -1,262 +1,351 @@
-下面是面向 **1.20.1 Fabric**、目标 **“不改 addon zip，复刻 Loot++ 1.8.9 行为”** 的一份 **预设完整 mod 结构**（目录树 + 每个模块职责 + 启动/运行时装配点）。
-下一条你再要“严格 parser 语法”，我会把每个 `config/*.txt` 的 BNF/EBNF、token 规则、转义/容错/WARN 规则完整写出来。
+# Re-LootPlusPlus — Architecture
+
+This document describes the actual package structure and module responsibilities of the **1.18.2 Fabric** implementation. The mod replicates Loot++ 1.8.9 addon behavior natively (no zip modification) and natively reimplements the Lucky Block mod.
 
 ---
 
-## 项目目录树（建议的完整结构）
+## Source layout
 
 ```
-lootpp-compat-fabric/
-├─ build.gradle
-├─ settings.gradle
-├─ gradle.properties
-├─ README.md
-├─ LICENSE
-├─ src/main/resources/
-│  ├─ fabric.mod.json
-│  ├─ lootpp.mixins.json
-│  ├─ assets/lootpp/
-│  │  ├─ lang/en_us.json
-│  │  ├─ lang/zh_cn.json
-│  │  ├─ textures/ (可选：你自带的基础材质)
-│  │  └─ models/   (可选：你自带的基础模型)
-│  └─ data/lootpp/ (可选：你自带的数据包内容)
+src/main/java/ie/orangep/reLootplusplus/
+├── ReLootPlusPlus.java                    // ModInitializer entry point
 │
-├─ src/main/java/<your/group>/lootpp/
-│  ├─ LootPP.java                         // ModInitializer：服务端/通用初始化入口
-│  ├─ LootPPClient.java                   // ClientModInitializer：资源包注入、客户端渲染挂钩
-│  ├─ LootPPConstants.java                // MODID、路径、版本、分隔符常量（"_____","%%%%%"）
-│  ├─ bootstrap/
-│  │  ├─ Bootstrap.java                   // 总装配器：scan → parse → register → buildIndex → installHooks
-│  │  ├─ BootstrapStage.java              // 分阶段枚举/状态，用于日志与失败降级
-│  │  └─ BootstrapReport.java             // 统计：加载了多少 pack、多少规则、多少 legacy warn
-│  │
-│  ├─ diagnostic/
-│  │  ├─ Log.java                         // 统一 logger 包装
-│  │  ├─ LegacyWarnReporter.java          // 关键：所有 legacy 适配必须走这里，强制 WARN
-│  │  ├─ WarnKey.java                     // warn 去重键（同原因 warnOnce）
-│  │  ├─ ParseError.java                  // 可恢复错误（行级别跳过）
-│  │  └─ SourceLoc.java                   // packId/zip/path/line/rawLine：用于精准定位
-│  │
-│  ├─ pack/
-│  │  ├─ PackDiscovery.java               // 扫描 mods/ & 可选自定义目录，识别 addon zip
-│  │  ├─ AddonPack.java                   // 一个 zip 的抽象：id、路径、优先级、文件索引
-│  │  ├─ PackIndex.java                   // 列出 config/**.txt + 读取行（带 SourceLoc）
-│  │  ├─ PackMergePolicy.java             // 合并顺序策略：priority → 文件名排序
-│  │  └─ io/
-│  │     ├─ ZipFs.java                    // zip 文件系统/缓存读取（避免反复打开）
-│  │     └─ PackFileReader.java           // 读取 config 文本（UTF-8 + 容错 BOM）
-│  │
-│  ├─ resourcepack/
-│  │  ├─ ExternalPackResource.java         // 把 addon zip 的 assets/lootplusplus/* 暴露给资源系统
-│  │  ├─ ExternalPackProvider.java         // 资源包提供者（客户端）：把 zip 挂进 ResourcePackManager
-│  │  └─ mixin/
-│  │     └─ ResourcePackManagerMixin.java  // 注入 provider（1.20.1 通常需要 mixin）
-│  │
-│  ├─ legacy/
-│  │  ├─ LegacyCompat.java                // 兼容入口（禁止在别处偷偷修）
-│  │  ├─ mapping/
-│  │  │  ├─ LegacyIdMapper.java            // 1.8 id/meta → 1.20.1 id/state 的映射
-│  │  │  ├─ LegacySoundMapper.java         // mob.wither.death → 新 sound id
-│  │  │  ├─ LegacyParticleMapper.java      // spell/enchantmenttable → 新粒子
-│  │  │  ├─ LegacyPotionMapper.java        // 数字/旧名 → registry effect
-│  │  │  └─ LegacyEntityMapper.java        // Cow → minecraft:cow
-│  │  ├─ nbt/
-│  │  │  ├─ LenientNbtParser.java          // 宽松 SNBT：规范化时必须 WARN
-│  │  │  └─ NbtPredicate.java              // contains-match：规则 NBT 匹配
-│  │  └─ selector/
-│  │     ├─ LegacySelectorParser.java      // @e[r=3,score_x_min=...] → 目标列表（必须 WARN）
-│  │     └─ SelectorQuery.java             // 选择器查询对象（不依赖 Brigadier）
-│  │
-│  ├─ config/
-│  │  ├─ ConfigDomains.java               // 约定的目录：item_effects、block_drops、world_gen...
-│  │  ├─ model/
-│  │  │  ├─ key/
-│  │  │  │  ├─ ItemKey.java               // id + meta + nbtPredicate
-│  │  │  │  ├─ BlockKey.java              // id + meta
-│  │  │  │  └─ EntityKey.java             // id + nbtPredicate
-│  │  │  ├─ rule/
-│  │  │  │  ├─ EffectRule.java            // 物品/方块触发 → 药水效果
-│  │  │  │  ├─ CommandRule.java           // 物品/方块触发 → 命令串
-│  │  │  │  ├─ DropRule.java              // block/entity drops
-│  │  │  │  ├─ ThrownDef.java             // thrown item 定义
-│  │  │  │  ├─ WorldGenDef.java           // surface/underground 定义
-│  │  │  │  ├─ ChestLootDef.java          // chest_content 定义
-│  │  │  │  └─ CreativeEntry.java         // creative_menu_additions
-│  │  │  └─ drop/
-│  │  │     ├─ DropEntry.java             // i/e/c 三类
-│  │  │     ├─ DropGroup.java             // %%%%% 组：组内全执行/全掉落
-│  │  │     └─ DropRoller.java            // 权重抽取（复刻 Loot++ 权重语义）
-│  │  │
-│  │  ├─ loader/
-│  │  │  ├─ LoaderContext.java            // packIndex + legacyCompat + warnReporter
-│  │  │  ├─ ItemAdditionsLoader.java      // config/item_additions/*
-│  │  │  ├─ BlockAdditionsLoader.java     // config/block_additions/*
-│  │  │  ├─ ThrownLoader.java             // config/item_additions/thrown.txt
-│  │  │  ├─ EffectLoader.java             // config/item_effects/*.txt
-│  │  │  ├─ CommandLoader.java            // config/item_effects/command_*.txt
-│  │  │  ├─ BlockDropsLoader.java         // config/block_drops/adding|removing
-│  │  │  ├─ EntityDropsLoader.java        // config/entity_drops (兼容 enity_drops)
-│  │  │  ├─ WorldGenLoader.java           // config/world_gen/surface|underground
-│  │  │  ├─ ChestContentLoader.java       // config/chest_content/*
-│  │  │  ├─ RecipesLoader.java            // config/recipes/*
-│  │  │  ├─ OreDictLoader.java            // config/ore_dictionary/*
-│  │  │  └─ CreativeMenuLoader.java       // config/general/creative_menu_additions.txt
-│  │  │
-│  │  └─ parse/
-│  │     ├─ LineReader.java               // 行读取：跳过空行/#，保留 raw
-│  │     ├─ Splitter.java                 // "_____" 切分，保留空段
-│  │     ├─ NumberParser.java             // int/float/bool 解析（失败 → WARN + skip line）
-│  │     └─ Escapes.java                  // § 颜色码处理（可选）
-│  │
-│  ├─ registry/
-│  │  ├─ RegistryCoordinator.java         // 把 defs 注册进 Registry（只在 bootstrap 阶段）
-│  │  ├─ DynamicItemRegistrar.java        // 运行时根据 item_additions 注册
-│  │  ├─ DynamicBlockRegistrar.java       // 运行时根据 block_additions 注册
-│  │  ├─ EntityRegistrar.java             // ThrownItemEntity 等实体注册
-│  │  ├─ BlockEntityRegistrar.java        // CommandTriggerBlockEntity 注册
-│  │  ├─ CreativeTabRegistrar.java        // 1.20.1 的 item group/creative tabs 注入
-│  │  └─ RenderRegistrar.java             // 客户端渲染注册（如果需要）
-│  │
-│  ├─ content/
-│  │  ├─ block/
-│  │  │  └─ CommandTriggerBlock.java       // 复刻 command_trigger_block：读 CommandList
-│  │  ├─ blockentity/
-│  │  │  └─ CommandTriggerBlockEntity.java // tick 或 onPlace 触发命令（按旧行为）
-│  │  ├─ entity/
-│  │  │  └─ ThrownItemEntity.java          // impact 执行 DropGroup（i/e/c）
-│  │  └─ item/
-│  │     ├─ LootItem.java                 // 可选：loot item（右键变 loot）
-│  │     └─ OtherDynamicItems...          // item_additions 生成的物品基类
-│  │
-│  ├─ runtime/
-│  │  ├─ RuntimeIndex.java                // 把规则建索引：trigger → itemId/blockId/entityId → list
-│  │  ├─ RuntimeContext.java              // world/server/player/random/sourceLoc
-│  │  ├─ RuleEngine.java                  // 入口：tick/事件 → 查索引 → 执行
-│  │  ├─ trigger/
-│  │  │  ├─ TriggerType.java              // HELD/INVENTORY/WEARING/RIGHT_CLICK/...
-│  │  │  ├─ PlayerTickScanner.java        // 性能关键：背包扫描优化（只扫可能命中 itemId）
-│  │  │  └─ BlockSpaceProbe.java          // standing/inside 采样策略
-│  │  ├─ action/
-│  │  │  ├─ ApplyEffectAction.java        // 药水效果
-│  │  │  ├─ RunCommandAction.java         // 命令（legacy runner）
-│  │  │  ├─ SpawnDropAction.java          // i/e/c 掉落执行
-│  │  │  └─ WorldGenAction.java           // 放置方块/组
-│  │  └─ rng/
-│  │     └─ LootPPRandom.java             // 权重/概率 roll（保持可复现的细节）
-│  │
-│  ├─ hooks/
-│  │  ├─ HookInstaller.java               // 安装所有 Fabric events + 必要 mixin hook
-│  │  ├─ ServerTickHook.java              // 玩家 tick 触发 held/inv/wearing/standing/inside
-│  │  ├─ UseItemHook.java                 // right_click
-│  │  ├─ AttackHook.java                  // hitting_entity_to_entity
-│  │  ├─ BlockBreakHook.java              // digging_block + block_drops
-│  │  ├─ EntityDeathHook.java             // entity_drops
-│  │  ├─ LootTableHook.java               // chest_content 注入（loot table 修改）
-│  │  └─ WorldGenHook.java                // surface/underground feature 注册
-│  │
-│  ├─ command/
-│  │  ├─ LegacyCommandRunner.java         // 旧命令子集解释器（返回 successCount）
-│  │  ├─ LppBuiltins.java                 // lppcondition / lppeffect 实现
-│  │  ├─ exec/
-│  │  │  ├─ ExecContext.java              // 执行者、位置、世界、随机、sourceLoc
-│  │  │  ├─ ExecResult.java               // successCount + 可选 debug
-│  │  │  └─ CommandChain.java             // 支持分号/多命令串（按旧包常见写法）
-│  │  └─ impl/
-│  │     ├─ EffectCmd.java
-│  │     ├─ ParticleCmd.java
-│  │     ├─ SummonCmd.java
-│  │     ├─ ExecuteCmd.java
-│  │     ├─ TestforCmd.java
-│  │     ├─ PlaysoundCmd.java
-│  │     ├─ ScoreboardCmd.java
-│  │     ├─ SetblockCmd.java
-│  │     ├─ GiveCmd.java
-│  │     ├─ ClearCmd.java
-│  │     ├─ KillCmd.java
-│  │     └─ EnchantCmd.java
-│  │
-│  ├─ reload/
-│  │  ├─ ReloadListener.java              // /reload 时重建 RuntimeIndex（不重新注册物品方块）
-│  │  └─ ReloadState.java                 // reload 状态与版本戳
-│  │
-│  └─ mixin/
-│     ├─ common/
-│     │  ├─ BlockDropMixin.java            // 如果 Fabric event 不够用：拦截掉落/fortune/silk
-│     │  ├─ EntityDeathMixin.java          // 同理：确保能拿到 looting/击杀者
-│     │  └─ WorldGenMixin.java             // 如果需要更底层注入
-│     └─ client/
-│        └─ ResourcePackClientMixin.java   // 把外部 zip 注入资源包列表（若 API 不够）
+├── bootstrap/
+│   ├── Bootstrap.java                     // Phase orchestrator (see sequence below)
+│   └── BootstrapReport.java               // Pack/rule/warn counts collected during bootstrap
 │
-└─ src/client/java/... (可选：也可以都放 main/java 并用 @Environment 区分)
+├── config/
+│   ├── ReLootPlusPlusConfig.java          // JSON config model + load/save/override logic (25 fields)
+│   ├── AddonDisableStore.java             // Persists per-pack enable/disable state
+│   ├── CustomRemapStore.java              // User-defined ID remaps
+│   ├── TextureAdditionStore.java          // Extra texture paths from config
+│   │
+│   ├── loader/                            // One loader class per config domain
+│   │   ├── BlockAdditionsLoader.java      // config/block_additions/*.txt
+│   │   ├── BlockDropsLoader.java          // config/block_drops/adding.txt + removing.txt
+│   │   ├── ChestContentLoader.java        // config/chest_content/*.txt
+│   │   ├── CommandEffectLoader.java       // config/item_effects/command_*.txt
+│   │   ├── CreativeMenuLoader.java        // config/general/creative_menu_additions.txt
+│   │   ├── EffectLoader.java              // config/item_effects/*.txt (potion effects)
+│   │   ├── EntityDropsLoader.java         // config/entity_drops/*.txt
+│   │   ├── FishingLootLoader.java         // config/fishing_loot/*.txt
+│   │   ├── FurnaceRecipesLoader.java      // config/furnace_recipes/*.txt
+│   │   ├── ItemAdditionsLoader.java       // config/item_additions/*.txt
+│   │   ├── RecipesLoader.java             // config/recipes/*.txt
+│   │   ├── RecordsLoader.java             // config/records/records.txt
+│   │   ├── StackSizeLoader.java           // config/stack_size/stack_sizes.txt
+│   │   ├── ThrownLoader.java              // config/item_additions/thrown.txt
+│   │   └── WorldGenLoader.java            // config/world_gen/surface.txt + underground.txt
+│   │
+│   ├── model/                             // Parsed rule/def data models
+│   │   ├── block/                         // GenericBlockDef, PlantBlockDef, CropBlockDef, CakeBlockDef, ...
+│   │   ├── drop/                          // DropEntry, DropGroup, DropRoller (weight semantics)
+│   │   ├── general/                       // CreativeMenuEntry
+│   │   ├── item/                          // GenericItemDef, FoodDef, SwordDef, ToolDef, ArmorDef, ...
+│   │   ├── key/                           // ItemKey (id+meta+nbtPredicate), BlockKey
+│   │   ├── recipe/                        // ShapedRecipeDef, ShapelessRecipeDef, RecipeInput, ...
+│   │   └── rule/                          // EffectRule, CommandRule, BlockDropRule, ChestLootRule, ...
+│   │
+│   └── parse/
+│       ├── LineReader.java                // Skip blank lines and # / // comments; preserve SourceLoc
+│       ├── Splitter.java                  // Java-split semantics for "_____" and "%%%%%"
+│       └── NumberParser.java             // int/float/bool with WARN on failure
+│
+├── diagnostic/
+│   ├── Log.java                           // Unified logger; DetailLevel: SUMMARY / DETAIL / TRACE
+│   ├── DebugFileWriter.java               // Writes all debug/trace lines to file regardless of console level
+│   ├── DiagnosticExporter.java            // Exports report.json + warnings.tsv + thrown.tsv
+│   ├── LegacyWarnReporter.java            // Centralized warn collection; console cap + suppression summary
+│   ├── SourceLoc.java                     // packId / packPath / innerPath / lineNumber / rawLine
+│   ├── WarnEntry.java                     // Single warning record
+│   └── WarnKey.java                       // De-dup key for warnOnce()
+│
+├── legacy/
+│   ├── LegacyDropSanitizer.java           // Pre-processes drop strings before Lucky parsing
+│   ├── mapping/
+│   │   ├── LegacyBlockIdMapper.java       // 1.8 block IDs + tile entity IDs → 1.18.2
+│   │   ├── LegacyChestTypeMapper.java     // Loot++ chest type names → 1.18.2 loot-table IDs
+│   │   ├── LegacyEffectIdMapper.java      // Numeric/legacy effect names → registry Identifier
+│   │   ├── LegacyEnchantmentIdMapper.java // Numeric/legacy enchantment IDs → registry Identifier
+│   │   ├── LegacyEntityIdFixer.java       // Entity ID normalization (EntityHorse→horse, PigZombie→zombified_piglin, …)
+│   │   ├── LegacyItemIdMapper.java        // 1.8 item IDs + meta → 1.18.2 flat IDs
+│   │   ├── LegacyItemNbtFixer.java        // 1.8 item NBT repair (attribute names, display, ench tags)
+│   │   ├── LegacyParticleIdMapper.java    // Legacy particle names → 1.18.2 Identifier
+│   │   └── LegacyTileEntityNbtFixer.java  // Tile entity NBT repair; SpawnData migration
+│   ├── nbt/
+│   │   ├── LenientNbtParser.java          // Tolerant SNBT parser; normalizes and WARNs
+│   │   └── NbtPredicate.java              // NBT contains-match used for item/block key filtering
+│   ├── selector/
+│   │   ├── LegacySelectorParser.java      // @p/@a/@r/@e with legacy r/rm/score_*/c params
+│   │   └── SelectorContext.java           // Selector evaluation context (world, origin, random)
+│   └── text/
+│       └── LegacyText.java                // § color code + modifier parsing for display names
+│
+├── pack/
+│   ├── AddonPack.java                     // Single addon zip or directory (id, path, files)
+│   ├── PackDiscovery.java                 // Scans game directories; deduplicates by pack ID
+│   ├── PackIndex.java                     // Per-pack file listing with SourceLoc-aware line reading
+│   └── io/
+│       └── PackFileReader.java            // UTF-8 strict + ISO-8859-1 fallback; BOM strip
+│
+├── registry/
+│   ├── CreativeMenuRegistrar.java         // Registers dynamic items into creative tabs
+│   ├── DynamicBlockRegistrar.java         // Registers addon blocks from block_additions defs
+│   ├── DynamicItemRegistrar.java          // Registers addon items + thrown items
+│   └── EntityRegistrar.java              // Registers LootThrownItemEntity + NativeLuckyProjectile
+│
+├── runtime/
+│   ├── BlockDropRegistry.java             // block_drops rules indexed by block ID
+│   ├── ChestLootRegistry.java             // chest_content rules indexed by loot table ID
+│   ├── EntityDropRegistry.java            // entity_drops rules indexed by entity type
+│   ├── RuleEngine.java                    // Entry point: tick/event → index lookup → execute
+│   ├── RuntimeContext.java                // server, world, player, random, warnReporter
+│   ├── RuntimeIndex.java                  // Maps TriggerType → itemId/blockId → List<Rule>
+│   ├── RuntimeState.java                  // Static holder for config + all registries
+│   ├── StackSizeRegistry.java             // Per-item stack size overrides
+│   ├── ThrownRegistry.java                // Thrown-item defs indexed by item ID
+│   └── trigger/
+│       └── TriggerType.java               // HELD, IN_INVENTORY, BLOCKS_IN_INVENTORY, WEARING_ARMOUR, STANDING_ON_BLOCK, INSIDE_BLOCK
+│
+├── hooks/
+│   ├── HookInstaller.java                 // Installs all Fabric events on server start
+│   ├── ServerTickHook.java                // Tick scan: held/armour/inventory/standing/inside
+│   ├── UseItemHook.java                   // Right-click item trigger
+│   ├── AttackHook.java                    // hitting_entity_to_entity trigger
+│   ├── ThrownUseHook.java                 // Thrown-item entity impact
+│   ├── BlockBreakHook.java                // block_drops trigger
+│   ├── EntityDeathHook.java               // entity_drops trigger
+│   └── ChestLootHook.java                 // chest_content injection via LootManagerMixin
+│
+├── command/
+│   ├── DumpNbtCommand.java                // /dumpnbt item|block
+│   ├── LuckyDropEvalCommand.java          // /lppdrop eval|eval_dry|eval_counts|lucky_eval|...
+│   ├── LegacyCommandRunner.java           // Interprets 1.8 command subset (successCount semantics)
+│   └── exec/
+│       ├── CommandChain.java              // Splits on top-level `;`; warns on && / ||
+│       ├── ExecContext.java               // Executor, position, world, random, SourceLoc
+│       └── ExecResult.java                // successCount + optional debug info
+│
+├── content/
+│   ├── entity/
+│   │   └── LootThrownItemEntity.java      // Thrown item entity; executes drop group on impact
+│   ├── item/
+│   │   ├── LegacyNamedItem.java           // Base dynamic item with translated display name
+│   │   ├── LootThrownItem.java            // Right-click to throw LootThrownItemEntity
+│   │   └── LegacyNamed{Sword,Bow,Axe,Shovel,Pickaxe,Hoe,Armor,BlockItem}.java
+│   └── material/
+│       ├── LegacyArmorMaterial.java       // Armor material from addon spec
+│       └── LegacyToolMaterial.java        // Tool material from addon spec
+│
+├── recipe/
+│   ├── ModRecipes.java                    // Registers NbtShapedRecipe + NbtShapelessRecipe serializers
+│   ├── NbtShapedRecipe.java               // Shaped recipe that preserves NBT on crafting output
+│   └── NbtShapelessRecipe.java            // Shapeless variant
+│
+├── resourcepack/
+│   ├── AddonResourceIndex.java            // Scans all textures in an addon pack's assets/
+│   ├── AddonBlockResourcePack.java        // Generates blockstate/model JSON for dynamic blocks
+│   ├── CombinedResourcePack.java          // Combines multiple resource packs as one
+│   ├── ExternalPackProvider.java          // ResourcePackProvider: mounts addon zips as resource packs
+│   ├── ExternalZipResourcePack.java       // AbstractFileResourcePack backed by a zip entry
+│   ├── LegacyPatchingResourcePack.java    // Wraps a pack to apply LegacyResourcePackPatcher fixes
+│   ├── LegacyResourcePackPatcher.java     // Fixes 1.8 blockstates, texture paths, .lang→.json
+│   └── ResourcePackUiHelper.java          // Helpers for the in-game pack list screen
+│
+├── lucky/
+│   ├── attr/
+│   │   ├── LuckyAttr.java                 // Parsed key=value attr from a Lucky drop line
+│   │   └── LuckyAttrParser.java           // Parses the `@attr=val` syntax; bare `@chance` → `chance=1` + WARN
+│   ├── block/
+│   │   ├── NativeLuckyBlock.java          // Lucky Block; reads luck from block entity + defaultLuck config
+│   │   ├── NativeLuckyBlockEntity.java    // Stores luck value + optional custom drop list
+│   │   └── NativeLuckyBlockItem.java      // Block item with luck tooltip
+│   ├── crafting/
+│   │   ├── LuckyLuckCraftingLoader.java   // Loads luck-modifier crafting recipes from addon data
+│   │   └── LuckyLuckModifierRecipe.java   // Recipe that sets luck NBT on a lucky block item
+│   ├── drop/
+│   │   ├── LuckyDropContext.java          // Context passed to all drop actions (world, pos, player, luck)
+│   │   ├── LuckyDropEngine.java           // Selects + executes a drop; chat message; debug trace
+│   │   ├── LuckyDropEvaluator.java        // Evaluates a single LuckyDropLine
+│   │   ├── LuckyDropFieldRegistry.java    // Maps field names to attribute setters
+│   │   ├── LuckyDropLine.java             // Parsed drop line: type, weight, attrs, group entries
+│   │   ├── LuckyDropParser.java           // Parses Lucky drop format (key=value attrs separated by commas)
+│   │   └── LuckyDropRoller.java           // Weighted random selection; applies luckModifier config
+│   ├── drop/action/                       // One class per Lucky drop `type=` value
+│   │   ├── LuckyItemDropAction.java       // type=item
+│   │   ├── LuckyEntityDropAction.java     // type=entity
+│   │   ├── LuckyBlockDropAction.java      // type=block
+│   │   ├── LuckyStructureDropAction.java  // type=structure
+│   │   ├── LuckyCommandDropAction.java    // type=command (respects commandDropEnabled config)
+│   │   ├── LuckyEffectDropAction.java     // type=effect
+│   │   ├── LuckySoundDropAction.java      // type=sound
+│   │   ├── LuckyExplosionDropAction.java  // type=explosion
+│   │   ├── LuckyFillDropAction.java       // type=fill
+│   │   ├── LuckyParticleDropAction.java   // type=particle
+│   │   ├── LuckyProjectileDropAction.java // type=projectile
+│   │   ├── LuckyThrowDropAction.java      // type=throw
+│   │   ├── LuckyMessageDropAction.java    // type=message
+│   │   ├── LuckyTimeDropAction.java       // type=time
+│   │   ├── LuckyChestDropAction.java      // type=chest
+│   │   ├── LuckyDifficultyDropAction.java // type=difficulty
+│   │   └── LuckyAttrToNbt.java            // Converts Lucky attrs to NBT compound
+│   ├── entity/
+│   │   ├── NativeLuckyProjectile.java     // Lucky projectile entity (type=projectile)
+│   │   └── NativeThrownLuckyPotion.java   // Lucky potion throw entity
+│   ├── hook/
+│   │   └── LuckyBlockBreakHook.java       // Hooks into block-break to fire LuckyDropEngine
+│   ├── item/
+│   │   ├── NativeLuckyBow.java            // Lucky bow item
+│   │   ├── NativeLuckyPotion.java         // Lucky potion item
+│   │   └── NativeLuckySword.java          // Lucky sword item
+│   ├── loader/
+│   │   ├── LuckyAddonData.java            // Parsed per-addon data (drops, structures, natural gen, properties)
+│   │   ├── LuckyAddonLoader.java          // Reads Lucky addon zip files; merges drops from all addons
+│   │   ├── LuckyAddonProperties.java      // Parsed properties.txt fields (luck ranges, block textures, …)
+│   │   ├── LuckyNaturalGenEntry.java      // One entry from natural_gen.txt
+│   │   ├── LuckyPluginInit.java           // Parses plugin_init.txt per addon
+│   │   └── LuckyStructureEntry.java       // One entry from structures.txt
+│   ├── registry/
+│   │   ├── AddonLuckyRegistrar.java       // Registers one Lucky Block variant per addon
+│   │   └── LuckyRegistrar.java            // Registers base lucky:lucky_block + items
+│   ├── structure/
+│   │   ├── LuckyStructReader.java         // Reads Lucky .luckystruct format
+│   │   ├── NbtStructureReader.java        // Reads vanilla .nbt structure files
+│   │   ├── ParsedStructure.java           // record(width, height, length, blocks)
+│   │   ├── SchematicReader.java           // Reads MCEdit .schematic; respects structureMaxDimension config
+│   │   ├── StructureBlock.java            // One block within a ParsedStructure
+│   │   ├── StructureFileLoader.java       // Dispatches to the right reader by file extension
+│   │   └── StructurePlacer.java           // Places a ParsedStructure in the world
+│   ├── template/
+│   │   └── LuckyTemplateVars.java         // Expands #posX / #rand / #circleOffset / … template vars
+│   └── worldgen/
+│       ├── LuckyNaturalGenFeature.java    // Fabric Feature that places Lucky Blocks naturally
+│       └── LuckyNaturalGenRegistrar.java  // Registers per-addon natural-gen features (gated by naturalGenEnabled)
+│
+├── mixin/
+│   ├── ArmorFeatureRendererMixin.java     // Client: dynamic armor texture rendering
+│   ├── BlockDropMixin.java                // Fine-grained block drop interception (fortune/silk)
+│   ├── EntityRenderDispatcherMixin.java   // Client: suppress missing-renderer errors (skipMissingEntityRenderers)
+│   ├── GameMenuScreenMixin.java           // Injects "✦ Loot++" button into pause menu
+│   ├── ItemStackSizeMixin.java            // Applies StackSizeRegistry overrides
+│   ├── LootManagerMixin.java              // Injects chest_content rules into loot table loading
+│   ├── MinecraftClientMixin.java          // Client-side resource-pack reload hook
+│   ├── PackScreenMixin.java               // Resource pack screen: shows addon packs
+│   ├── PlayerEntityEatMixin.java          // Food effect application for addon foods
+│   ├── PlayerManagerMixin.java            // Server-side player join hook
+│   ├── RecipeManagerMixin.java            // Injects dynamic recipes from RecipesLoader
+│   └── ResourcePackProfile{Mixin,Accessor,EntryMixin}.java   // Resource pack list injection
+│
+└── client/
+    ├── AddonTextureLoader.java            // Loads and registers atlas sprites for addon textures
+    ├── ReLootPlusPlusClient.java          // ClientModInitializer: texture loader + resource pack provider
+    └── screen/
+        ├── LppUi.java                     // Shared drawing helpers (header bar, tab bar, row stripe, …)
+        ├── PackTextureGalleryScreen.java  // Texture gallery tab — sprite grid with hover tooltip
+        ├── ReLootPlusPlusDropLinesScreen.java  // Drop lines viewer (scrollable, type-colored)
+        ├── ReLootPlusPlusItemDetailScreen.java // Item detail: kind + drop-line references
+        ├── ReLootPlusPlusMenuScreen.java   // Main pack list screen (access via ✦ Loot++ in pause menu)
+        ├── ReLootPlusPlusPackDetailScreen.java // Per-pack detail: Overview / Items / Drops / Structures / Textures tabs
+        └── ReLootPlusPlusRawLineScreen.java    // Source text viewer with line numbers and syntax coloring
 ```
 
 ---
 
-## 关键设计点（为了 1:1 复刻 + 不改 zip）
+## Bootstrap Sequence
 
-### 1) “外部 zip”双重身份
+`Bootstrap.java` runs these phases in order inside `ModInitializer#onInitialize`:
 
-* **配置源**：服务端也要读 `config/**/*.txt`
-* **资源包**：客户端要挂载 `assets/lootplusplus/**`（模型/贴图/语言）
-* 因此 `pack/` 与 `resourcepack/` 必须拆开：同一个 `AddonPack` 同时供两边使用，但客户端额外创建 `ExternalPackResource`。
+1. **Load config** — `ReLootPlusPlusConfig.load()`; open `DebugFileWriter` if `debugFileEnabled` and level ≥ DETAIL.
+2. **Pack discovery** — `PackDiscovery.discover()` → `List<AddonPack>`; deduplicates by pack ID.
+3. **Pack indexing** — `PackIndex` with `SourceLoc` (zip / inner path / line number / raw text).
+4. **Parse all rules** — one `*Loader` per config domain. `LuckyAddonLoader.load()` also runs here.
+5. **Register content** — `DynamicItemRegistrar`, `DynamicBlockRegistrar`, `EntityRegistrar`, `CreativeMenuRegistrar`, `LuckyRegistrar`, `AddonLuckyRegistrar` — registry writes happen **only here**.
+6. **World gen** — `LuckyNaturalGenRegistrar.register()` (gated by `naturalGenEnabled`).
+7. **Build `RuntimeIndex`** — maps `TriggerType → itemId/blockId → List<Rule>`.
+8. **Install hooks** — `HookInstaller.install()` registers Fabric events on server start.
+9. **Export diagnostics** — `DiagnosticExporter.export()` if `exportReports=true`.
 
-### 2) registry 与 reload 的硬边界（1.20.1 必须遵守）
-
-* **动态注册物品/方块/实体**只能在启动 bootstrap 阶段做（注册表冻结后不可再加）
-* `/reload` 只能：
-
-    * 重读规则（effects/commands/drops/chest/worldgen 放置规则）并重建 `RuntimeIndex`
-    * 不能新增 item/block（否则 1.20.1 会崩或行为不稳定）
-
-### 3) Legacy 兼容必须强制 WARN
-
-* 所有兼容入口集中在 `legacy/LegacyCompat`
-* 任意地方想做映射（meta、旧实体名、旧 sound、旧选择器、宽松 NBT）都必须调用 `LegacyCompat.*`，由它触发：
-
-    * `LegacyWarnReporter.warnOnce(WarnKey, msg, SourceLoc)`
-* **禁止** loader/runtime/command 里私自 silent fix
-
-### 4) 行级容错（复刻 Loot++ 的“坏一行不影响全局”）
-
-* `ConfigLoader` 对每一行：解析失败 → `WARN + 跳过该行`
-* 只有“文件无法读取/zip 损坏”这种才升级为 ERROR（并且最好降级继续加载其他 pack）
-
-### 5) runtime 索引必须做“快速命中”
-
-1.20.1 背包/装备 tick 扫描是性能热点：
-
-* `RuntimeIndex` 建 `itemId → rules`、`blockId → rules`、`trigger → map`
-* `PlayerTickScanner` 先用“可能命中 itemId 集合”过滤，避免每 tick 扫全背包做复杂 NBT predicate
+**Hard constraint:** item/block/entity registration is impossible after bootstrap. `/reload` must not attempt it. Reload only rebuilds `RuntimeIndex` and rules.
 
 ---
 
-## Bootstrap 执行顺序（写在结构里方便你直接照着实现）
+## Mixin Inventory
 
-`bootstrap/Bootstrap.java` 的阶段建议固定：
-
-1. `discoverPacks()` → `List<AddonPack>`
-2. `indexFiles()` → `PackIndex`（行号/SourceLoc）
-3. `parseDefinitions()`：
-
-    * item_additions / block_additions / thrown / command_trigger_block 依赖等
-4. `registerContent()`：
-
-    * blocks/items/entities/blockEntities/creativeTabs
-5. `parseRules()`：
-
-    * item_effects / command_* / drops / chest_content / world_gen / recipes(可选)
-6. `buildRuntimeIndex()` → `RuntimeIndex`
-7. `installHooks()` → `hooks/HookInstaller`
-8. `installReload()` → `reload/ReloadListener`
-9. `reportSummary()` → packs/规则数量/legacy warn 统计
+| Mixin | Side | Purpose |
+|---|---|---|
+| `ArmorFeatureRendererMixin` | Client | Renders dynamic armor textures from addon resource packs |
+| `BlockDropMixin` | Server | Intercepts block drops for fortune/silk-touch interactions |
+| `EntityRenderDispatcherMixin` | Client | Suppresses missing entity renderer errors when `skipMissingEntityRenderers=true` |
+| `GameMenuScreenMixin` | Client | Injects "✦ Loot++" button (top-left, 96×20px) into the pause menu |
+| `ItemStackSizeMixin` | Both | Applies `StackSizeRegistry` overrides to `ItemStack.getMaxCount()` |
+| `LootManagerMixin` | Server | Injects `ChestLootRegistry` rules into vanilla loot table evaluation |
+| `MinecraftClientMixin` | Client | Hooks resource-pack reload to re-initialize addon texture atlases |
+| `PackScreenMixin` | Client | Makes addon zip packs appear in the resource pack selection screen |
+| `PlayerEntityEatMixin` | Both | Applies addon food effects via `EffectLoader` rules |
+| `PlayerManagerMixin` | Server | Server-side player join hook for initial state setup |
+| `RecipeManagerMixin` | Both | Injects dynamic shaped/shapeless recipes from `RecipesLoader` |
+| `ResourcePackProfileMixin` + Accessor + EntryMixin | Client | Injects addon packs into the ordered resource pack profile list |
 
 ---
 
-如果你认可这个结构，下一条我会按你要求给 **“严格的 parser 语法”**：
+## Lucky Drop Action Classes
 
-* 每个文件类型（item_effects、command_*、thrown、world_gen/surface、entity_drops/adding、chest_content 等）的 **EBNF**
-* token/空白/注释/字段缺失规则
-* `%%%%%` 分组与权重抽取语义
-* NBT 的“宽松解析”何时触发、何时 WARN、何时跳过整行
-* legacy 路径别名（`enity_drops`）等的判定规则与 WARN 文案模板
+17 action classes in `lucky/drop/action/`:
+
+| Class | `type=` value | What it does |
+|---|---|---|
+| `LuckyItemDropAction` | `item` | Spawns an item entity with legacy ID + NBT fix |
+| `LuckyEntityDropAction` | `entity` | Summons entity at computed pos; legacy entity ID fix |
+| `LuckyBlockDropAction` | `block` | Places block at computed pos; applies tile-entity NBT |
+| `LuckyStructureDropAction` | `structure` | Loads `.nbt`/`.luckystruct`/`.schematic` and places via `StructurePlacer` |
+| `LuckyCommandDropAction` | `command` | Executes via `LegacyCommandRunner`; gated by `commandDropEnabled` |
+| `LuckyEffectDropAction` | `effect` | Applies potion effect to nearby players; legacy effect ID fix |
+| `LuckySoundDropAction` | `sound` | Plays sound at drop pos; legacy sound ID fix |
+| `LuckyExplosionDropAction` | `explosion` | Creates explosion at computed pos |
+| `LuckyFillDropAction` | `fill` | Fills a volume with a block |
+| `LuckyParticleDropAction` | `particle` | Spawns particles; legacy particle ID fix |
+| `LuckyProjectileDropAction` | `projectile` | Fires a `NativeLuckyProjectile` |
+| `LuckyThrowDropAction` | `throw` | Spawns a thrown item entity |
+| `LuckyMessageDropAction` | `message` | Sends chat message to player (gated by `dropChatEnabled`) |
+| `LuckyTimeDropAction` | `time` | Sets world time |
+| `LuckyChestDropAction` | `chest` | Spawns a chest filled with loot |
+| `LuckyDifficultyDropAction` | `difficulty` | Changes game difficulty |
+| `LuckyAttrToNbt` | *(helper)* | Converts Lucky `key=value` attrs to NBT compound |
+
+---
+
+## Key Design Constraints
+
+### Config text separators
+- **Field separator:** `_____` (five underscores)
+- **Drop group separator:** `%%%%%` (five percent signs)
+- Always use `Splitter.splitRegex(input, "_____")` — simulates Java `String.split(regex, 0)` semantics (drops trailing empty fields).
+
+### DropGroup weight semantics
+Only the **first entry's weight** in a `%%%%%`-separated group participates in the weighted roll. If the group is selected, **all entries** execute. This matches Loot++ 1.8.9 behavior exactly.
+
+### Per-line error handling
+Parse failures are per-line: WARN + skip. Only unreadable zip/file I/O is a hard error. The bootstrap never crashes on a single bad line.
+
+### Legacy compat — always WARN, never silent
+All 1.8 → 1.18.2 adaptations go through `legacy/` classes and always call `LegacyWarnReporter.warn()` or `warnOnce()`.
+
+WARN format:
+```
+[WARN] [LootPP-Legacy] <Type> <detail> @ <packId>:<innerPath>:<lineNumber>
+```
+
+Common WARN types: `MetaWildcard`, `SelectorParam`, `EffectName`, `SoundId`, `EntityId`, `BlockId`, `ItemId`, `LegacyNBT`, `LegacyChestType`, `LuckyAttrBareChance`, `LegacyBlockstate`, `LegacyTexture`.
+
+### Tick scan order (fixed for determinism)
+1. `held` (main hand)
+2. `wearing_armour`
+3. `in_inventory`
+4. `standing_on_block`
+5. `inside_block`
+
+### Item/block ID normalization
+External addon names often contain dots or uppercase (e.g. `astral.fairy`). Normalize to lowercase with dots → underscores; register under `lootplusplus:<normalized>` namespace; preserve the raw name for logging.
+
+### File encoding
+Read config text UTF-8 strict first; fall back to ISO-8859-1/CP1252. Strip leading BOM (`\uFEFF`).

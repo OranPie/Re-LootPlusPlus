@@ -1,3 +1,19 @@
+# Re-LootPlusPlus — Config Parser Spec
+
+> **This is the Loot++ 1.8.9 behavioral spec** extracted from JAR bytecode analysis.
+> It defines the grammar and split/default/clamp rules that this mod implements against.
+> All formats described here are implemented in `config/loader/` and `config/parse/`.
+>
+> **Implementation classes:**
+> - `config/parse/Splitter.java` — Java `String.split(regex, 0)` semantics
+> - `config/parse/LineReader.java` — comment/blank-line filtering with SourceLoc
+> - `config/parse/NumberParser.java` — int/float/bool with WARN on parse failure
+> - `config/loader/*Loader.java` — one loader per config domain
+>
+> **Deferred / partial:** `fishing_amounts` grammar has edge cases not fully verified.
+>
+> ---
+>
 下面是我**直接从你给的 `Loot++-1.7.1_for_1.8.9.jar` 的字节码行为**里整理出来的「严格 parser 语法」（也就是你 1.20.1 Fabric 端要 1:1 复现的输入语法/分隔规则/默认值/边界处理）。我会尽量用 **EBNF + “JAR 实际 split/limit/默认值/钳制规则”**描述，避免“凭印象猜”。
 
 > ✅ **重要：你要求 legacy 适配必须 WARN**

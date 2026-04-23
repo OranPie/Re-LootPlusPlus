@@ -1,115 +1,166 @@
 # Re-LootPlusPlus
 
-Re-LootPlusPlus is a Fabric mod that ports legacy Loot++/Lucky Block addon behavior to modern Minecraft without editing addon zip files.
+Re-LootPlusPlus is a Fabric mod that replicates **Loot++ 1.8.9** and **Lucky Block** addon behavior on modern Minecraft **without modifying addon zip files**. It is a native re-implementation — not an injection shim — that scans addon zips, parses their `config/**/*.txt` rules, and wires everything into Fabric events and loot tables.
 
-Current target in this repository:
-- Minecraft `1.18.2`
-- Fabric Loader `0.18.4`
-- Fabric API `0.77.0+1.18.2`
-- Java `17`
+| Property | Value |
+|---|---|
+| Minecraft | `1.18.2` |
+| Fabric Loader | `0.18.4` |
+| Fabric API | `0.77.0+1.18.2` |
+| Java | `17` |
+| Mod ID | `re-lootplusplus` |
 
 ## What This Mod Does
-- Scans legacy addon packs in `run/addons/`.
-- Parses legacy `config/*.txt` formats into runtime rules.
-- Registers dynamic items/blocks/entities needed by addons.
-- Injects/normalizes legacy crafting recipes at runtime.
-- Adapts legacy IDs/meta/NBT/selectors/commands with explicit warnings.
-- Exports diagnostics under `run/logs/re_lpp/Latest/<timestamp>/`.
 
-## Project Status (March 4, 2026)
-Implemented and validated:
-- Legacy recipe item remaps (for example `minecraft:web -> minecraft:cobweb`).
-- Runtime recipe sanitizer for invalid/missing ingredients and bad shaped keys.
-- Shapeless recipe empty-ingredient guard.
-- Lucky drop eval/debug commands (`/lppdrop ...`).
-- Warning throttling controls (console cap per warning type + summary).
+- **Pack discovery** — scans multiple directories for addon zips/folders (see below).
+- **Config parsing** — reads `config/**/*.txt` rules from every discovered pack.
+- **Dynamic registration** — registers items, blocks, entities, and creative-tab entries required by addons at bootstrap time.
+- **Lucky Block native impl** — own `NativeLuckyBlock` / `NativeLuckyBlockEntity` that evaluates Lucky drop lines without depending on the Lucky Block runtime at play time.
+- **Legacy adaptation** — maps 1.8 IDs, sounds, effects, NBT, selectors, and commands to 1.18.2 equivalents, with mandatory WARN for every adaptation.
+- **In-game UI** — `✦ Loot++` button in the pause menu opens a full pack-browser with drop-line viewer and texture gallery.
+- **Diagnostics** — exports `report.json`, `warnings.tsv`, `thrown.tsv` per run.
 
-Known remaining upstream issues (outside Re-LootPlusPlus parser fixes):
-- Lucky loader can still emit `Error reading addon crafting recipe` (`ReadCraftingKt` IndexOutOfBounds).
-- Missing external structure files in some addons (`structures.txt` path not found).
+## Addon Pack Discovery
+
+`PackDiscovery` scans these directories (in the game directory) in fixed order:
+
+1. `lootplusplus_addons/`
+2. `addons/`, `addons/lucky/`, `addons/lucky_block/`
+3. `packs/`
+4. `mods/` (unless `scanModsDir=false`)
+5. Paths in `config.extraAddonDirs`, `RELOOTPLUSPLUS_ADDONS` env var, or `-Drelootplusplus.addons` system property
+
+Both `.zip` files and unpacked directories (any subdirectory containing a `config/` subfolder) are recognized.
 
 ## Build and Run
-Build:
+
 ```bash
-./gradlew compileJava --no-daemon
+./gradlew compileJava --no-daemon    # compile only (fast check)
+./gradlew build --no-daemon          # compile + package → build/libs/
+./gradlew runClient --no-daemon      # launch game client (dev environment)
+./gradlew runServer --no-daemon      # launch dedicated server (dev environment)
 ```
 
-Run client:
-```bash
-./gradlew runClient --no-daemon
-```
+There is no automated test suite; use the in-game commands to validate behavior.
 
-Run dedicated server:
-```bash
-./gradlew runServer --no-daemon
-```
+## Runtime Commands (require op)
 
-## Runtime Commands
-Admin commands registered by this mod:
-
-- `dumpnbt item`
-- `dumpnbt block`
-- `lppdrop eval [x y z]`
-- `lppdrop eval_dry [x y z]`
-- `lppdrop eval_counts <times> [x y z]`
-- `lppdrop lucky_eval [x y z]`
-- `lppdrop lucky_eval_bulk <times> [x y z]`
-- `lppdrop lucky_eval_bulk_dry <times> [x y z]`
-
-These are used to validate real runtime drop parsing and Lucky integration behavior.
+| Command | Description |
+|---|---|
+| `dumpnbt item` | Print NBT of held item |
+| `dumpnbt block` | Print NBT of targeted block |
+| `lppdrop eval [x y z]` | Evaluate Lucky drops at position |
+| `lppdrop eval_dry [x y z]` | Evaluate without executing |
+| `lppdrop eval_counts <n> [x y z]` | Simulate N evaluations and print counts |
+| `lppdrop lucky_eval [x y z]` | Run Lucky drop pipeline |
+| `lppdrop lucky_eval_bulk <n> [x y z]` | Run Lucky drop pipeline N times |
+| `lppdrop lucky_eval_bulk_dry <n> [x y z]` | Same but without executing |
 
 ## Config (`config/relootplusplus.json`)
-Main options:
 
-- `dryRun`: parse-only mode, no registration/hooks.
-- `exportReports`: write diagnostics files.
-- `exportRawLines`: include source raw lines in warning exports.
-- `exportDir`: diagnostics output directory (default `logs/re_lpp`).
-- `injectResourcePacks`: enable addon asset injection.
-- `logWarnings`: global warning logging gate.
-- `logLegacyWarnings`: legacy warning console output switch.
-- `logDetailLevel`: shared Re-Loot++ log detail level (`summary`, `detail`, `trace`).
-- `logDetailFilters`: optional module filter list for Re-Loot++ logs.
-- `legacyWarnConsoleLimitPerType`: max console entries per warning type (`<=0` = unlimited).
-- `legacyWarnConsoleSummary`: print suppressed warning summary at end of bootstrap.
-- `disabledAddonPacks`: disable specific addon pack IDs.
+The file is auto-created on first run. All fields can be overridden via system properties (`-Drelootplusplus.<field>=<value>`) or environment variables (`RELOOTPLUSPLUS_<FIELD>=<value>`).
 
-System/env overrides are supported (see `ReLootPlusPlusConfig`).
+### Core
+
+| Field | Default | Description |
+|---|---|---|
+| `dryRun` | `false` | Parse-only mode — skip registration and hook installation |
+| `exportReports` | `true` | Write diagnostics files on shutdown |
+| `exportRawLines` | `true` | Include raw source lines in `warnings.tsv` |
+| `exportDir` | `"logs/re_lootplusplus"` | Root directory for diagnostic exports |
+| `extraAddonDirs` | `[]` | Additional directories to scan for addon packs |
+| `duplicateStrategy` | `"suffix"` | How to handle duplicate pack/block/item IDs: `suffix` or `ignore` |
+| `potioncoreNamespace` | `"re_potioncore"` | Namespace used when remapping `potioncore:*` effect IDs |
+| `disabledAddonPacks` | `[]` | Pack IDs to skip during load |
+| `injectResourcePacks` | `true` | Mount addon zip `assets/**` as a resource pack |
+| `skipMissingEntityRenderers` | `false` | Suppress errors for entities without client renderers |
+
+### Logging
+
+| Field | Default | Description |
+|---|---|---|
+| `logWarnings` | `false` | Global warning logging gate |
+| `logLegacyWarnings` | `false` | Print legacy WARN lines to console |
+| `logDetailLevel` | `null` | Detail log level: `summary`, `detail`, or `trace` |
+| `logDetailFilters` | `[]` | Module filter list (empty = all modules) |
+| `legacyWarnConsoleLimitPerType` | `5` | Max console entries per WARN type (`0` = unlimited) |
+| `legacyWarnConsoleSummary` | `true` | Print suppressed-count summary at bootstrap end |
+| `debugFileEnabled` | `true` | Enable debug log file (requires level ≥ `detail`) |
+| `debugFileMaxLines` | `0` | Truncate debug log file at N lines (`0` = unlimited) |
+
+### Drop Engine
+
+| Field | Default | Description |
+|---|---|---|
+| `luckModifier` | `0.1` | Luck-to-weight scale factor in `LuckyDropRoller` |
+| `defaultLuck` | `0` | Baseline luck added to every Lucky Block break |
+| `commandDropEnabled` | `true` | `false` skips all `type=command` Lucky drops |
+| `dropChatEnabled` | `true` | `false` suppresses in-game chat messages for Lucky drops |
+
+### Tick Hooks
+
+| Field | Default | Description |
+|---|---|---|
+| `tickIntervalTicks` | `1` | Run player tick scan every N ticks |
+| `enabledTriggerTypes` | `[]` | Trigger types to run (empty = all): `held`, `wearing_armour`, `in_inventory`, `standing_on_block`, `inside_block` |
+
+### World & Pack
+
+| Field | Default | Description |
+|---|---|---|
+| `structureMaxDimension` | `256` | Skip schematics with any axis larger than this (`0` = no limit) |
+| `scanModsDir` | `true` | `false` prevents scanning the `mods/` directory for addon packs |
+| `naturalGenEnabled` | `true` | `false` disables Lucky Block natural generation feature registration |
+| `legacySanitizeEnabled` | `true` | `false` disables legacy drop-string sanitization |
+
+## In-Game UI
+
+The `✦ Loot++` button appears in the pause menu (top-left corner). It opens:
+
+- **MenuScreen** — lists all discovered addon packs with enable/disable toggle, search filter, and status badges.
+- **PackDetailScreen** — tabs: Overview, Items, Drops, Structures, Textures.
+- **DropLinesScreen** — scrollable list of parsed Lucky drop lines for a pack.
+- **ItemDetailScreen** — item kind, drop-line references.
+- **RawLineScreen** — source text with line numbers and syntax coloring.
+- **PackTextureGalleryScreen** — previews all textures found in a pack's assets.
 
 ## Diagnostics
-Each run exports:
-- `warnings.tsv`: full warning list with source location.
-- `warn_types.txt`: warning counts by type.
-- `summary.txt`: pack counts + load summary.
-- `counts.txt`, `packs.txt`, `thrown_items.txt`.
 
-Latest export pointer:
-- `run/logs/re_lpp/latest.txt`
+When `exportReports=true`, each run writes to `<exportDir>/<timestamp>/`:
 
-## Performance Notes
-Recent optimizations:
-- Warning collection switched from copy-on-write list to locked array list (better for high warning volume).
-- Recipe item resolution now caches normalized lookups during recipe injection.
-- Console warning spam can be capped per type while preserving full exported warning data.
+| File | Contents |
+|---|---|
+| `report.json` | Structured summary: config, bootstrap stats, warn-type counts, pack list |
+| `warnings.tsv` | All legacy warnings, one per line, tab-separated with source location |
+| `thrown.tsv` | Thrown-item definitions |
+
+`<exportDir>/latest.txt` points to the most recent timestamp directory.
+
+When `logDetailLevel=detail` or `trace` and `debugFileEnabled=true`, a `debug-<timestamp>.log` file is written to `<exportDir>/` with all `Log.debug` and `Log.trace` calls regardless of console filter.
 
 ## Documentation Map
-The following docs are still useful as design/spec references:
 
-- `STRUCTURE.md`: architecture layout and module boundaries.
-- `PARSER.md`: strict legacy text grammar details.
-- `ADAPTION.md`: selector/legacy command semantics.
-- `INJECTION.md`: Fabric injection/registration strategy.
-- `REFERENCE.md`: API/hook references and execution notes.
-- `ADDITION.md`: compatibility backlog and implementation notes.
-- `PLAN.md`: staged migration plan.
-
-Note: Some docs discuss broader 1.20.1 planning history; this repository is currently wired for 1.18.2 runtime.
+| File | Contents |
+|---|---|
+| `STRUCTURE.md` | Package-level architecture: module responsibilities, bootstrap sequence, key design constraints |
+| `PARSER.md` | Original Loot++ 1.8.9 parser spec (EBNF grammar, split rules, defaults, clamping) — the reference we implement against |
+| `ADAPTION.md` | Legacy selector and command semantics spec |
+| `INJECTION.md` | Fabric injection/registration strategy notes |
+| `REFERENCE.md` | Hook matrix, execution order, and example parse traces |
+| `ADDITION.md` | Additional config file formats and compatibility notes |
+| `PLAN.md` | Original implementation plan (for historical context) |
 
 ## Troubleshooting
-If recipe errors appear again:
-1. Check `run/logs/latest.log` for `Parsing error loading recipe`.
-2. Check `run/logs/re_lpp/Latest/<ts>/warnings.tsv` for `LegacyRecipe*` and `LegacyItemId` entries.
-3. Run `/lppdrop eval_counts` and `/lppdrop lucky_eval_bulk_dry` to validate runtime parsing behavior quickly.
 
-If server startup stops early:
+**Lucky drops produce no result / entity marked as removed:**
+- The `minecraft:item` entity is spawned as a LootThrownItem; if the underlying item entity was already marked removed, the drop silently fails. Check `lppdrop eval_dry` output.
+
+**Debug log is too large:**
+- Set `debugFileMaxLines` to a non-zero value (e.g. `50000`) to truncate.
+
+**Addon pack not loading:**
+- Check `disabledAddonPacks` and ensure the zip contains a `config/` subfolder.
+- Run with `logLegacyWarnings=true` to see per-line parse errors in the console.
+
+**Server startup stops early:**
 - Ensure `run/eula.txt` contains `eula=true`.

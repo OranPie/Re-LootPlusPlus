@@ -1,3 +1,22 @@
+# Re-LootPlusPlus — Fabric Injection Strategy
+
+> **This document describes the Fabric API lifecycle rules and injection strategy**
+> for registering content and wiring events from externally scanned addon zips.
+>
+> **Key classes:**
+> - `bootstrap/Bootstrap.java` — nine-phase orchestrator; all registration in phase 5 only
+> - `hooks/HookInstaller.java` — installs all Fabric events (no registration)
+> - `mixin/` — 12 thin mixins; prefer Fabric API events over mixins
+> - `resourcepack/ExternalPackProvider.java` — mounts addon zips as resource packs on the client
+>
+> **Hard lifecycle constraint:** item/block/entity registration is impossible after
+> `ModInitializer#onInitialize` returns. `/reload` may only rebuild `RuntimeIndex` and rules.
+>
+> The original content below was written for a planned 1.20.1 implementation.
+> The actual implementation targets **1.18.2** with Fabric API `0.77.0+1.18.2`.
+>
+> ---
+>
 可以的。下面给你一份**“把内容/行为注入 1.20.1 Fabric 游戏”的开发指导/标准**（面向你这个 Loot++ 兼容模组：外部 zip → 解析 → 注册 → 事件/loot/worldgen 注入 → reload）。我按“必须遵守的时机/边界 + 推荐实现路径 + 最小代码模板”写，你照这个做基本不会踩 Fabric 的常见雷。
 
 ---
