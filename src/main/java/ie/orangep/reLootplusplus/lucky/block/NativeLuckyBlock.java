@@ -83,9 +83,13 @@ public final class NativeLuckyBlock extends BlockWithEntity {
             // Pre-parsed drops for normal (non-custom) evaluation
             List<LuckyDropLine> drops = null;
 
+            // Apply defaultLuck from config as baseline
+            ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig lbCfg = RuntimeState.config();
+            if (lbCfg != null) luck = lbCfg.defaultLuck;
+
             BlockEntity be = world.getBlockEntity(pos);
             if (be instanceof NativeLuckyBlockEntity luckyBe) {
-                luck = luckyBe.getLuck();
+                luck = luckyBe.getLuck() + (lbCfg != null ? lbCfg.defaultLuck : 0);
                 customDropRaws = luckyBe.getCustomDrops();
             }
 

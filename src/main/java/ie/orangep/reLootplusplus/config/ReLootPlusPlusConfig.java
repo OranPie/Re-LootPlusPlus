@@ -34,6 +34,61 @@ public final class ReLootPlusPlusConfig {
     public boolean legacyWarnConsoleSummary = true;
     public List<String> disabledAddonPacks = new ArrayList<>();
 
+    // ── Drop engine ──────────────────────────────────────────────────────────
+    /** Weight multiplier per luck point in LuckyDropRoller (matches Lucky Block default 0.1). */
+    public float luckModifier = 0.1f;
+    /** Baseline luck added to block-entity luck before every drop roll (may be negative). */
+    public int defaultLuck = 0;
+    /** When false, type=command Lucky drops are skipped (useful for untrusted packs). */
+    public boolean commandDropEnabled = true;
+    /** When false, the drop-result summary is not sent to the player's chat. */
+    public boolean dropChatEnabled = true;
+
+    // ── Server tick hook ─────────────────────────────────────────────────────
+    /** Run per-player trigger checks once every N server ticks (1 = every tick). */
+    public int tickIntervalTicks = 1;
+    /**
+     * Trigger types to enable (held, wearing_armour, in_inventory, standing_on_block,
+     * inside_block). Empty list means all triggers are active.
+     */
+    public List<String> enabledTriggerTypes = new ArrayList<>();
+
+    // ── Structure placement ───────────────────────────────────────────────────
+    /**
+     * Maximum width/height/length (blocks) allowed for a schematic structure.
+     * Schematics that exceed this dimension in any axis are skipped with a WARN.
+     * 0 = no limit.
+     */
+    public int structureMaxDimension = 256;
+
+    // ── Pack discovery ────────────────────────────────────────────────────────
+    /** When false, the mods/ directory is not scanned for addon packs. */
+    public boolean scanModsDir = true;
+
+    // ── World generation ──────────────────────────────────────────────────────
+    /** When false, natural_gen rules (Lucky Block world-gen features) are not registered. */
+    public boolean naturalGenEnabled = true;
+
+    // ── Legacy compat ─────────────────────────────────────────────────────────
+    /**
+     * When false, LegacyDropSanitizer is bypassed and raw drop lines are parsed as-is.
+     * For packs already written for 1.18.2 syntax that need no compat fixes.
+     */
+    public boolean legacySanitizeEnabled = true;
+
+    // ── Debug file ────────────────────────────────────────────────────────────
+    /**
+     * When false, no debug log file is written even if logDetailLevel >= detail.
+     * Console output is unaffected.
+     */
+    public boolean debugFileEnabled = true;
+    /**
+     * Maximum number of lines written to the debug log file per run.
+     * 0 = unlimited. When the limit is reached, a truncation notice is written and
+     * the file writer stops.
+     */
+    public int debugFileMaxLines = 0;
+
     public static ReLootPlusPlusConfig load() {
         Path configDir = FabricLoader.getInstance().getConfigDir();
         Path configFile = configDir.resolve(FILE_NAME);
@@ -103,6 +158,25 @@ public final class ReLootPlusPlusConfig {
         if (legacyWarnConsoleLimitPerType < 0) {
             legacyWarnConsoleLimitPerType = 0;
         }
+        // Drop engine
+        if (luckModifier < 0f) {
+            luckModifier = 0f;
+        }
+        // Tick hook
+        if (tickIntervalTicks < 1) {
+            tickIntervalTicks = 1;
+        }
+        if (enabledTriggerTypes == null) {
+            enabledTriggerTypes = new ArrayList<>();
+        }
+        // Structure
+        if (structureMaxDimension < 0) {
+            structureMaxDimension = 0;
+        }
+        // Debug file
+        if (debugFileMaxLines < 0) {
+            debugFileMaxLines = 0;
+        }
     }
 
     private void applyOverrides() {
@@ -165,6 +239,49 @@ public final class ReLootPlusPlusConfig {
         }
         applyBooleanOverride("relootplusplus.skipMissingEntityRenderers", "RELOOTPLUSPLUS_SKIP_MISSING_ENTITY_RENDERERS",
             value -> skipMissingEntityRenderers = value);
+
+        // Drop engine overrides
+        applyFloatOverride("relootplusplus.luckModifier", "RELOOTPLUSPLUS_LUCK_MODIFIER",
+            value -> luckModifier = value);
+        applyIntOverride("relootplusplus.defaultLuck", "RELOOTPLUSPLUS_DEFAULT_LUCK",
+            value -> defaultLuck = value);
+        applyBooleanOverride("relootplusplus.commandDropEnabled", "RELOOTPLUSPLUS_COMMAND_DROP_ENABLED",
+            value -> commandDropEnabled = value);
+        applyBooleanOverride("relootplusplus.dropChatEnabled", "RELOOTPLUSPLUS_DROP_CHAT_ENABLED",
+            value -> dropChatEnabled = value);
+
+        // Tick hook overrides
+        applyIntOverride("relootplusplus.tickIntervalTicks", "RELOOTPLUSPLUS_TICK_INTERVAL_TICKS",
+            value -> tickIntervalTicks = value);
+        String enabledTriggersRaw = firstNonBlank(
+            System.getProperty("relootplusplus.enabledTriggerTypes"),
+            System.getenv("RELOOTPLUSPLUS_ENABLED_TRIGGER_TYPES")
+        );
+        if (enabledTriggersRaw != null) {
+            enabledTriggerTypes = parseList(enabledTriggersRaw);
+        }
+
+        // Structure overrides
+        applyIntOverride("relootplusplus.structureMaxDimension", "RELOOTPLUSPLUS_STRUCTURE_MAX_DIMENSION",
+            value -> structureMaxDimension = value);
+
+        // Pack discovery overrides
+        applyBooleanOverride("relootplusplus.scanModsDir", "RELOOTPLUSPLUS_SCAN_MODS_DIR",
+            value -> scanModsDir = value);
+
+        // World gen overrides
+        applyBooleanOverride("relootplusplus.naturalGenEnabled", "RELOOTPLUSPLUS_NATURAL_GEN_ENABLED",
+            value -> naturalGenEnabled = value);
+
+        // Legacy compat overrides
+        applyBooleanOverride("relootplusplus.legacySanitizeEnabled", "RELOOTPLUSPLUS_LEGACY_SANITIZE_ENABLED",
+            value -> legacySanitizeEnabled = value);
+
+        // Debug file overrides
+        applyBooleanOverride("relootplusplus.debugFileEnabled", "RELOOTPLUSPLUS_DEBUG_FILE_ENABLED",
+            value -> debugFileEnabled = value);
+        applyIntOverride("relootplusplus.debugFileMaxLines", "RELOOTPLUSPLUS_DEBUG_FILE_MAX_LINES",
+            value -> debugFileMaxLines = value);
     }
 
     public void save() {
@@ -233,6 +350,17 @@ public final class ReLootPlusPlusConfig {
         }
         try {
             setter.accept(Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private void applyFloatOverride(String propKey, String envKey, java.util.function.Consumer<Float> setter) {
+        String raw = firstNonBlank(System.getProperty(propKey), System.getenv(envKey));
+        if (raw == null) {
+            return;
+        }
+        try {
+            setter.accept(Float.parseFloat(raw.trim()));
         } catch (NumberFormatException ignored) {
         }
     }

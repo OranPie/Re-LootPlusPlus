@@ -1,9 +1,12 @@
 package ie.orangep.reLootplusplus.lucky.structure;
 
+import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyBlockIdMapper;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyTileEntityNbtFixer;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
@@ -27,6 +30,19 @@ public final class SchematicReader {
         int width = root.getShort("Width") & 0xFFFF;
         int height = root.getShort("Height") & 0xFFFF;
         int length = root.getShort("Length") & 0xFFFF;
+
+        // Guard against oversized schematics
+        ReLootPlusPlusConfig cfg = RuntimeState.config();
+        int maxDim = cfg != null ? cfg.structureMaxDimension : 256;
+        if (maxDim > 0 && (width > maxDim || height > maxDim || length > maxDim)) {
+            SourceLoc loc = new SourceLoc(packId, packId, ".schematic", 0, "");
+            reporter.warn("LuckyStructure",
+                "schematic too large (" + width + "×" + height + "×" + length
+                + ", max per axis=" + maxDim + ") — skipped", loc);
+            Log.trace("Legacy", "SchematicReader: skip oversized {}×{}×{} max={}", width, height, length, maxDim);
+            return new ParsedStructure(0, 0, 0, Collections.emptyList());
+        }
+
         byte[] blockIds = root.getByteArray("Blocks");
         byte[] data = root.getByteArray("Data");
 

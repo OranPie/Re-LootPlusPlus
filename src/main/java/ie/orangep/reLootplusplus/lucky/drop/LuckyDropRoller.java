@@ -1,5 +1,8 @@
 package ie.orangep.reLootplusplus.lucky.drop;
 
+import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
+
 import java.util.List;
 import java.util.Random;
 
@@ -68,7 +71,13 @@ public final class LuckyDropRoller {
      * Computes the effective weight for a drop entry given the current luck value.
      */
     static float computeWeight(int luckWeight, int luck) {
-        float w = 1.0f + luckWeight * LUCK_MODIFIER + luck * LUCK_MODIFIER;
+        float mod = luckModifier();
+        float w = 1.0f + luckWeight * mod + luck * mod;
         return Math.max(0f, w);
+    }
+
+    private static float luckModifier() {
+        ReLootPlusPlusConfig cfg = RuntimeState.config();
+        return cfg != null ? Math.max(0f, cfg.luckModifier) : LUCK_MODIFIER;
     }
 }

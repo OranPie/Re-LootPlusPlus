@@ -1,7 +1,9 @@
 package ie.orangep.reLootplusplus.lucky.drop;
 
+import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.LiteralText;
 
@@ -174,7 +176,9 @@ public final class LuckyDropEngine {
         }
 
         // Send chat to player with Minecraft color codes
-        if (showSummary && hasPlayer && !ctx.world().isClient()) {
+        ReLootPlusPlusConfig chatCfg = RuntimeState.config();
+        boolean chatEnabled = chatCfg == null || chatCfg.dropChatEnabled;
+        if (chatEnabled && showSummary && hasPlayer && !ctx.world().isClient()) {
             String typeColor = switch (type) {
                 case "item"      -> "§b";
                 case "entity"    -> "§a";

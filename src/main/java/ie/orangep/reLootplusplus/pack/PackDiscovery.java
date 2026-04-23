@@ -58,7 +58,9 @@ public final class PackDiscovery {
         candidateDirs.add(gameDir.resolve("addons").resolve("lucky"));
         candidateDirs.add(gameDir.resolve("addons").resolve("lucky_block"));
         candidateDirs.add(gameDir.resolve("packs"));
-        candidateDirs.add(gameDir.resolve("mods"));
+        if (config == null || config.scanModsDir) {
+            candidateDirs.add(gameDir.resolve("mods"));
+        }
         if (config != null && config.extraAddonDirs != null) {
             for (String extra : config.extraAddonDirs) {
                 addDir(candidateDirs, extra);

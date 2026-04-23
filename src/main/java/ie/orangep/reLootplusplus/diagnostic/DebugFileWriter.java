@@ -1,5 +1,7 @@
 package ie.orangep.reLootplusplus.diagnostic;
 
+import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +34,7 @@ public final class DebugFileWriter {
     private static volatile BufferedWriter writer;
     private static final AtomicBoolean opened = new AtomicBoolean(false);
     private static final AtomicBoolean failed = new AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicLong lineCount = new java.util.concurrent.atomic.AtomicLong(0);
 
     private DebugFileWriter() {}
 
@@ -64,6 +67,25 @@ public final class DebugFileWriter {
     /** Writes one debug/trace line.  No-op if the writer was never opened or has failed. */
     public static void write(String level, String module, String message) {
         if (writer == null || failed.get()) return;
+        // Enforce line limit from config
+        ReLootPlusPlusConfig cfg = RuntimeState.config();
+        int maxLines = cfg != null ? cfg.debugFileMaxLines : 0;
+        if (maxLines > 0) {
+            long n = lineCount.incrementAndGet();
+            if (n == maxLines + 1) {
+                // Write truncation notice then stop
+                try {
+                    synchronized (DebugFileWriter.class) {
+                        writer.write("# [DebugFileWriter] Line limit reached (" + maxLines + ") — log truncated here.\n");
+                        writer.flush();
+                    }
+                } catch (IOException ignored) {}
+                failed.set(true);
+                return;
+            } else if (n > maxLines + 1) {
+                return;
+            }
+        }
         try {
             String line = "[" + LocalDateTime.now().format(LINE_STAMP) + "] ["
                 + level + "] [" + (module != null ? module : "") + "] " + message + "\n";

@@ -21,6 +21,10 @@ public final class LuckyCommandDropAction {
     private LuckyCommandDropAction() {}
 
     public static void execute(LuckyDropLine drop, LuckyDropContext ctx) {
+        if (RuntimeState.config() != null && !RuntimeState.config().commandDropEnabled) {
+            Log.trace("LuckyDrop", "Command drop skipped (commandDropEnabled=false)");
+            return;
+        }
         LuckyTemplateVars.EvalContext evalCtx = new LuckyTemplateVars.EvalContext(
             ctx.world(), ctx.pos(), ctx.player(), ctx.world().getRandom()
         );

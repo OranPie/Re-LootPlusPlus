@@ -54,8 +54,8 @@ public final class Bootstrap {
         ModRecipes.register();
 
         ReLootPlusPlusConfig config = ReLootPlusPlusConfig.load();
-        // Open debug file writer when detail level is DETAIL or higher
-        if (Log.detailLevel().ordinal() >= Log.DetailLevel.DETAIL.ordinal()) {
+        // Open debug file writer when detail level is DETAIL or higher and not disabled by config
+        if (config.debugFileEnabled && Log.detailLevel().ordinal() >= Log.DetailLevel.DETAIL.ordinal()) {
             String filters = config.logDetailFilters == null || config.logDetailFilters.isEmpty()
                 ? "all" : String.join(",", config.logDetailFilters);
             DebugFileWriter.open(config.resolveExportDir(FabricLoader.getInstance().getGameDir()),
@@ -179,7 +179,9 @@ public final class Bootstrap {
         // Phase 4 (Lucky): register per-addon Lucky Blocks/items
         AddonLuckyRegistrar.register(LuckyAddonLoader.getAddonDataList());
         // Phase 4 (Lucky): register natural gen features for addon lucky blocks
-        LuckyNaturalGenRegistrar.register(LuckyAddonLoader.getAddonDataList());
+        if (config.naturalGenEnabled) {
+            LuckyNaturalGenRegistrar.register(LuckyAddonLoader.getAddonDataList());
+        }
         DynamicBlockRegistrar blockRegistrar = new DynamicBlockRegistrar(warnReporter, config.normalizedDuplicateStrategy());
         blockRegistrar.registerAll(blockAdditions);
 

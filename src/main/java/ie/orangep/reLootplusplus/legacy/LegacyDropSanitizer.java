@@ -18,6 +18,12 @@ public final class LegacyDropSanitizer {
         if (raw == null || raw.isEmpty()) {
             return raw;
         }
+        // Skip sanitization when disabled in config (for packs already in 1.18.2 syntax)
+        ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig cfg =
+            ie.orangep.reLootplusplus.runtime.RuntimeState.config();
+        if (cfg != null && !cfg.legacySanitizeEnabled) {
+            return raw;
+        }
         Log.trace("Legacy", "DropSanitize: in  '{}'", preview(raw));
         SANITIZE_CONTEXT.set(preview(raw));
         raw = fixAttrTypos(raw, reporter);
