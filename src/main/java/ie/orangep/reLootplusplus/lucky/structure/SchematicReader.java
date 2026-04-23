@@ -3,6 +3,7 @@ package ie.orangep.reLootplusplus.lucky.structure;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyBlockIdMapper;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyTileEntityNbtFixer;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
@@ -43,6 +44,10 @@ public final class SchematicReader {
                 fixed.putString("id", modernId);
                 te = fixed;
             }
+            // Fix up block-entity NBT for format changes between 1.8.9 and 1.18.2
+            // (spawner SpawnData/EntityId, chest item stacks, sign text lines, etc.)
+            SourceLoc teLoc = new SourceLoc(packId, packId, ".schematic", i, te.toString());
+            LegacyTileEntityNbtFixer.fix(te, reporter, teLoc);
             tileEntityMap.put(tx + "," + ty + "," + tz, te);
         }
 
