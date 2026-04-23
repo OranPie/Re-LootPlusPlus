@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.client.screen;
 
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyItemNbtFixer;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.resourcepack.AddonConfigIndex;
@@ -15,6 +16,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtElement;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
@@ -216,6 +218,21 @@ public final class ReLootPlusPlusItemDetailScreen extends Screen {
             new TranslatableText("menu.relootplusplus.analysis"), x, y, LppUi.C_ATTR_K);
         y += this.textRenderer.fontHeight + 4;
 
+        if (selectedStack != null && !selectedStack.isEmpty()) {
+            ms.push();
+            ms.translate(x, y, 0);
+            this.itemRenderer.renderInGui(selectedStack, 0, 0);
+            this.itemRenderer.renderGuiItemOverlay(this.textRenderer, selectedStack, 0, 0);
+            ms.pop();
+            this.textRenderer.drawWithShadow(ms, selectedStack.getName(), x + 20, y + 3, LppUi.C_BODY);
+            if (selectedNbtText != null && !selectedNbtText.isBlank()) {
+                this.textRenderer.drawWithShadow(ms,
+                    new LiteralText(LppUi.clip(selectedNbtText, this.width - x * 2 - 22, this.textRenderer)),
+                    x + 20, y + 12, LppUi.C_DIM);
+            }
+            y += this.textRenderer.fontHeight + 16;
+        }
+
         // Extract attrs for display
         Map<String, String> table = buildAnalysisTable(raw);
         int maxW = this.width - x * 2;
@@ -368,21 +385,39 @@ public final class ReLootPlusPlusItemDetailScreen extends Screen {
 
     private static ItemStack resolveStack(String id, AddonConfigIndex.ItemRef ref,
                                           @SuppressWarnings("unused") Object ignored) {
-        Identifier parsed = Identifier.tryParse(id);
+        NbtCompound stackNbt = parseStackNbt(ref);
+        String resolvedId = id;
+        if (stackNbt != null && stackNbt.contains("Item", NbtElement.COMPOUND_TYPE)) {
+            NbtCompound item = stackNbt.getCompound("Item");
+            if (item.contains("id", NbtElement.STRING_TYPE)) {
+                String nestedId = item.getString("id");
+                if (nestedId != null && !nestedId.isBlank()) {
+                    resolvedId = nestedId;
+                }
+            }
+        }
+
+        Identifier parsed = Identifier.tryParse(resolvedId);
         if (parsed == null) return ItemStack.EMPTY;
         Item item = Registry.ITEM.get(parsed);
         if (item == null || item == Items.AIR) return ItemStack.EMPTY;
         ItemStack stack = new ItemStack(item);
-        if (ref != null) {
-            String raw = ref.rawLine();
-            String nbtRaw = extractNbtPayload(raw);
-            if (nbtRaw != null) {
-                LegacyWarnReporter reporter = new LegacyWarnReporter();
-                reporter.setLogToConsole(false);
-                NbtCompound tag = LenientNbtParser.parseOrNull(nbtRaw, reporter,
-                    ref.sourceLoc(), "LegacyNBT");
-                if (tag != null && !tag.isEmpty()) stack.setNbt(tag);
+        if (stackNbt != null) {
+            if (stackNbt.contains("Item", NbtElement.COMPOUND_TYPE)) {
+                NbtCompound innerItem = stackNbt.getCompound("Item");
+                if (innerItem.contains("tag", NbtElement.COMPOUND_TYPE)) {
+                    stackNbt = innerItem.getCompound("tag").copy();
+                } else {
+                    stackNbt = null;
+                }
             }
+        }
+        if (stackNbt != null && !stackNbt.isEmpty()) {
+            LegacyWarnReporter reporter = new LegacyWarnReporter();
+            reporter.setLogToConsole(false);
+            LegacyItemNbtFixer.fixItemStack(stackNbt, reporter,
+                ref != null && ref.sourceLoc() != null ? ref.sourceLoc().formatShort() : null);
+            stack.setNbt(stackNbt);
         }
         return stack;
     }
@@ -390,6 +425,16 @@ public final class ReLootPlusPlusItemDetailScreen extends Screen {
     private static ItemStack buildStackForRef(AddonConfigIndex.ItemRef ref) {
         if (ref == null) return ItemStack.EMPTY;
         String id = extractToken(ref.rawLine(), "ID");
+        NbtCompound parsed = parseStackNbt(ref);
+        if (parsed != null && parsed.contains("Item", NbtElement.COMPOUND_TYPE)) {
+            NbtCompound item = parsed.getCompound("Item");
+            if (item.contains("id", NbtElement.STRING_TYPE)) {
+                String nestedId = item.getString("id");
+                if (nestedId != null && !nestedId.isBlank()) {
+                    id = nestedId;
+                }
+            }
+        }
         if (id == null || id.isBlank()) return ItemStack.EMPTY;
         return resolveStack(id, ref, null);
     }
@@ -416,6 +461,19 @@ public final class ReLootPlusPlusItemDetailScreen extends Screen {
         if (end < 0) end = raw.indexOf(',', start);
         if (end < 0) end = raw.length();
         return normalizeNbt(raw.substring(start, end).trim());
+    }
+
+    private static NbtCompound parseStackNbt(AddonConfigIndex.ItemRef ref) {
+        if (ref == null) {
+            return null;
+        }
+        String nbtRaw = extractNbtPayload(ref.rawLine());
+        if (nbtRaw == null) {
+            return null;
+        }
+        LegacyWarnReporter reporter = new LegacyWarnReporter();
+        reporter.setLogToConsole(false);
+        return LenientNbtParser.parseOrNull(nbtRaw, reporter, ref.sourceLoc(), "LegacyNBT");
     }
 
     private static int findMatching(String raw, int start) {
