@@ -54,10 +54,12 @@ public final class Bootstrap {
         ReLootPlusPlusConfig config = ReLootPlusPlusConfig.load();
         Log.info(
             "Bootstrap",
-            "Legacy warning console: enabled={}, perTypeLimit={}, summary={}",
+            "Legacy warning console: enabled={}, perTypeLimit={}, summary={}; detailLog={}, filters={}",
             config.logLegacyWarnings,
             config.legacyWarnConsoleLimitPerType <= 0 ? "unlimited" : config.legacyWarnConsoleLimitPerType,
-            config.legacyWarnConsoleSummary
+            config.legacyWarnConsoleSummary,
+            config.logDetailLevel,
+            config.logDetailFilters == null || config.logDetailFilters.isEmpty() ? "all" : String.join(",", config.logDetailFilters)
         );
         LegacyWarnReporter warnReporter = new LegacyWarnReporter();
         warnReporter.setLogToConsole(config.logLegacyWarnings);

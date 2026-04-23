@@ -124,16 +124,17 @@ public final class LuckyDropEngine {
 
     /**
      * Logs a pretty-printed summary of the selected drop.
-     * Console output is gated behind {@code logDebug=true}.
-     * Chat message is always sent to the player (when present).
+     * Console and in-game output share the same detail level and module filter.
      */
     private static void logDropSelection(LuckyDropContext ctx, LuckyDropLine drop, int poolSize, boolean dryRun) {
-        boolean doLog = Log.isDebugEnabled();
+        boolean showSummary = Log.shouldShowDetail("LuckyDrop", Log.DetailLevel.SUMMARY);
+        boolean showDetail = Log.shouldShowDetail("LuckyDrop", Log.DetailLevel.DETAIL);
+        boolean showTrace = Log.shouldShowDetail("LuckyDrop", Log.DetailLevel.TRACE);
         boolean hasPlayer = ctx.player() != null;
-        if (!doLog && !hasPlayer) return;
+        if (!showSummary && !showDetail && !showTrace && !hasPlayer) return;
 
         String type    = drop.isGroup() ? "group" : drop.type();
-        String id      = buildDropId(drop, doLog);
+        String id      = buildDropId(drop, showDetail || showTrace);
         String pos     = ctx.pos().getX() + ", " + ctx.pos().getY() + ", " + ctx.pos().getZ();
         String luck    = (ctx.luck() >= 0 ? "+" : "") + ctx.luck();
         float  weight  = LuckyDropRoller.computeWeight(drop.luckWeight(), ctx.luck());
@@ -141,7 +142,13 @@ public final class LuckyDropEngine {
         String dryTag  = dryRun ? " [DRY]" : "";
         String source  = ctx.sourceLoc() != null ? ctx.sourceLoc().packId() : "?";
 
-        if (doLog) {
+        if (showSummary) {
+            String summary = String.format("type=%-10s id=%-28s luck=%-5s pool=%d weight=%.2f chance=%.2f src=%s%s",
+                type, shorten(id, 28), luck, poolSize, weight, chance, shorten(source, 18), dryTag);
+            Log.detail("LuckyDrop", summary);
+        }
+
+        if (showDetail) {
             String line1 = String.format("╔══ Lucky Drop%s ══════════════════════════════╗", dryTag);
             String line2 = String.format("║  type=%-10s  id=%-28s║", type, shorten(id, 28));
             String line3 = String.format("║  pos=%-18s  luck=%-5s  pool=%d      ║", pos, luck, poolSize);
@@ -152,22 +159,21 @@ public final class LuckyDropEngine {
             Log.debug("LuckyDrop", line3);
             Log.debug("LuckyDrop", line4);
             Log.debug("LuckyDrop", line5);
-            // In debug mode, expand group entries
-            if (drop.isGroup() && drop.groupEntries() != null) {
-                Log.debug("LuckyDrop", "  ╠══ Group entries (" + drop.groupEntries().size() + ") ══");
-                for (int i = 0; i < drop.groupEntries().size(); i++) {
-                    LuckyDropLine e = drop.groupEntries().get(i);
-                    String eType = e.isGroup() ? "group" : e.type();
-                    String eId   = e.rawId() != null ? e.rawId() : "(none)";
-                    Log.debug("LuckyDrop", String.format("  ║  [%d] type=%-8s  id=%s", i, eType, eId));
-                }
-                Log.debug("LuckyDrop", "  ╚═══════════════════════════════════════════");
+        }
+
+        if (showTrace && drop.isGroup() && drop.groupEntries() != null) {
+            Log.trace("LuckyDrop", "  ╠══ Group entries (" + drop.groupEntries().size() + ") ══");
+            for (int i = 0; i < drop.groupEntries().size(); i++) {
+                LuckyDropLine e = drop.groupEntries().get(i);
+                String eType = e.isGroup() ? "group" : e.type();
+                String eId   = e.rawId() != null ? e.rawId() : "(none)";
+                Log.trace("LuckyDrop", String.format("  ║  [%d] type=%-8s  id=%s", i, eType, eId));
             }
+            Log.trace("LuckyDrop", "  ╚═══════════════════════════════════════════");
         }
 
         // Send chat to player with Minecraft color codes
-        // Groups are only shown in debug mode (they have meaningless internal IDs like "group-2")
-        if (hasPlayer && !ctx.world().isClient() && (!drop.isGroup() || doLog)) {
+        if (showSummary && hasPlayer && !ctx.world().isClient()) {
             String typeColor = switch (type) {
                 case "item"      -> "§b";
                 case "entity"    -> "§a";
@@ -187,8 +193,8 @@ public final class LuckyDropEngine {
             } catch (Exception ignored) {
                 // Don't crash on display failure
             }
-            // In debug mode, send each group entry as a follow-up chat line
-            if (doLog && drop.isGroup() && drop.groupEntries() != null) {
+            // In trace mode, send each group entry as a follow-up chat line
+            if (showTrace && drop.isGroup() && drop.groupEntries() != null) {
                 for (int i = 0; i < drop.groupEntries().size(); i++) {
                     LuckyDropLine e = drop.groupEntries().get(i);
                     String eType = e.isGroup() ? "group" : e.type();

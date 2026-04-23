@@ -68,6 +68,8 @@ Main options:
 - `injectResourcePacks`: enable addon asset injection.
 - `logWarnings`: global warning logging gate.
 - `logLegacyWarnings`: legacy warning console output switch.
+- `logDetailLevel`: shared Lucky-drop log detail level (`summary`, `detail`, `trace`).
+- `logDetailFilters`: optional module filter list for Lucky-drop detail logs.
 - `legacyWarnConsoleLimitPerType`: max console entries per warning type (`<=0` = unlimited).
 - `legacyWarnConsoleSummary`: print suppressed warning summary at end of bootstrap.
 - `disabledAddonPacks`: disable specific addon pack IDs.

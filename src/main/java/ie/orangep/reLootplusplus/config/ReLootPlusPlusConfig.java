@@ -28,6 +28,8 @@ public final class ReLootPlusPlusConfig {
     public boolean logWarnings = false;
     public boolean logLegacyWarnings = false;
     public boolean logDebug = false;
+    public String logDetailLevel = null;
+    public List<String> logDetailFilters = new ArrayList<>();
     public int legacyWarnConsoleLimitPerType = 5;
     public boolean legacyWarnConsoleSummary = true;
     public List<String> disabledAddonPacks = new ArrayList<>();
@@ -92,6 +94,12 @@ public final class ReLootPlusPlusConfig {
         if (potioncoreNamespace == null || potioncoreNamespace.isBlank()) {
             potioncoreNamespace = "re_potioncore";
         }
+        if (logDetailLevel == null || logDetailLevel.isBlank()) {
+            logDetailLevel = logDebug ? "trace" : "summary";
+        }
+        if (logDetailFilters == null) {
+            logDetailFilters = new ArrayList<>();
+        }
         if (legacyWarnConsoleLimitPerType < 0) {
             legacyWarnConsoleLimitPerType = 0;
         }
@@ -109,6 +117,20 @@ public final class ReLootPlusPlusConfig {
             value -> logLegacyWarnings = value);
         applyBooleanOverride("relootplusplus.logDebug", "RELOOTPLUSPLUS_LOG_DEBUG",
             value -> logDebug = value);
+        String logDetailLevelRaw = firstNonBlank(
+            System.getProperty("relootplusplus.logDetailLevel"),
+            System.getenv("RELOOTPLUSPLUS_LOG_DETAIL_LEVEL")
+        );
+        if (logDetailLevelRaw != null) {
+            logDetailLevel = logDetailLevelRaw;
+        }
+        String logDetailFiltersRaw = firstNonBlank(
+            System.getProperty("relootplusplus.logDetailFilters"),
+            System.getenv("RELOOTPLUSPLUS_LOG_DETAIL_FILTERS")
+        );
+        if (logDetailFiltersRaw != null) {
+            logDetailFilters = parseList(logDetailFiltersRaw);
+        }
         applyIntOverride("relootplusplus.legacyWarnConsoleLimitPerType", "RELOOTPLUSPLUS_LEGACY_WARN_CONSOLE_LIMIT_PER_TYPE",
             value -> legacyWarnConsoleLimitPerType = value);
         applyBooleanOverride("relootplusplus.legacyWarnConsoleSummary", "RELOOTPLUSPLUS_LEGACY_WARN_CONSOLE_SUMMARY",
