@@ -53,7 +53,7 @@ public final class LuckyNaturalGenRegistrar {
             int entryIdx = 0;
             for (LuckyNaturalGenEntry entry : entries) {
                 if (!entry.isSimpleBlock()) {
-                    Log.info("NaturalGen",
+                    Log.debug("NaturalGen",
                         "Skipping non-block natural_gen entry in pack '{}' (groups/structures unsupported): {}",
                         data.packId(), preview(entry.cleanDropLine()));
                     continue;
@@ -122,7 +122,7 @@ public final class LuckyNaturalGenRegistrar {
                 Predicate<net.fabricmc.fabric.api.biome.v1.BiomeSelectionContext> selector = biomeSelectorFor(dim);
                 BiomeModifications.addFeature(selector, GenerationStep.Feature.VEGETAL_DECORATION, pfKey);
 
-                Log.info("NaturalGen",
+                Log.debug("NaturalGen",
                     "Registered '{}' → block={} rarity=1/{} dim={}",
                     data.packId(), blockIdent, rarity, dim);
                 entryIdx++;

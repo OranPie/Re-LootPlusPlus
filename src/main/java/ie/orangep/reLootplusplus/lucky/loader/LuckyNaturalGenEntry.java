@@ -57,7 +57,8 @@ public record LuckyNaturalGenEntry(
 
     /**
      * Parses a {@code natural_gen.txt} into a list of entries.
-     * Lines starting with {@code //} are ignored; blank lines are skipped.
+     * Lines starting with {@code //} or {@code /} are skipped (comments / structure refs).
+     * Blank lines are skipped. Section headers start with {@code >}.
      */
     public static List<LuckyNaturalGenEntry> parseLines(List<String> lines) {
         List<LuckyNaturalGenEntry> result = new ArrayList<>();
@@ -66,7 +67,8 @@ public record LuckyNaturalGenEntry(
         for (String line : lines) {
             if (line == null) continue;
             String stripped = line.strip();
-            if (stripped.isEmpty() || stripped.startsWith("//")) continue;
+            // Skip blank lines, comment lines (// or //) and structure-ref lines (single /)
+            if (stripped.isEmpty() || stripped.startsWith("/")) continue;
 
             if (stripped.startsWith(">")) {
                 currentDimension = stripped.substring(1).strip().toLowerCase(Locale.ROOT);
