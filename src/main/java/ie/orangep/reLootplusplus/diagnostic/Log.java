@@ -32,9 +32,11 @@ public final class Log {
     private Log() {
     }
 
-    /** Always-visible informational message (operational summaries, bootstrap steps). */
+    /** Summary-level informational message (operational summaries, bootstrap steps). */
     public static void info(String module, String message, Object... args) {
-        LOGGER.info(format(module, message), args);
+        if (shouldShowDetail(module, DetailLevel.SUMMARY)) {
+            LOGGER.info(format(module, message), args);
+        }
     }
 
     /** Summary-level log that is shared by console and in-game sinks. */
@@ -63,7 +65,7 @@ public final class Log {
 
     /** Non-critical warning — gated behind {@code logWarnings=true} in config. */
     public static void warn(String module, String message, Object... args) {
-        if (shouldWarn()) {
+        if (shouldWarn() && shouldShowDetail(module, DetailLevel.SUMMARY)) {
             LOGGER.warn(format(module, message), args);
         }
     }
