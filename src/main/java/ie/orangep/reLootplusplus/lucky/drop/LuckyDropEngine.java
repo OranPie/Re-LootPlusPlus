@@ -166,7 +166,8 @@ public final class LuckyDropEngine {
         }
 
         // Send chat to player with Minecraft color codes
-        if (hasPlayer && !ctx.world().isClient()) {
+        // Groups are only shown in debug mode (they have meaningless internal IDs like "group-2")
+        if (hasPlayer && !ctx.world().isClient() && (!drop.isGroup() || doLog)) {
             String typeColor = switch (type) {
                 case "item"      -> "§b";
                 case "entity"    -> "§a";
