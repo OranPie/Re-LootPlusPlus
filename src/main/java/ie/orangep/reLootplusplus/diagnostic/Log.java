@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.diagnostic;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.MessageFormatter;
 
 import java.util.List;
 import java.util.Locale;
@@ -47,17 +48,22 @@ public final class Log {
     }
 
     /**
-     * Verbose debug trace — gated behind {@code logDebug=true} in config.
-     * Use for per-tick / per-drop traces that would flood logs at runtime.
+     * Verbose debug trace — always written to the debug log file (when open);
+     * also printed to console when {@code logDetailLevel=detail} or higher.
      */
     public static void debug(String module, String message, Object... args) {
+        DebugFileWriter.write("DEBUG", module, resolveArgs(message, args));
         if (shouldShowDetail(module, DetailLevel.DETAIL)) {
             LOGGER.info(format(module, message), args);
         }
     }
 
-    /** Deep trace logs shown only at the highest detail level. */
+    /**
+     * Deep trace — always written to the debug log file (when open);
+     * also printed to console only at {@code logDetailLevel=trace}.
+     */
     public static void trace(String module, String message, Object... args) {
+        DebugFileWriter.write("TRACE", module, resolveArgs(message, args));
         if (shouldShowDetail(module, DetailLevel.TRACE)) {
             LOGGER.info(format(module, message), args);
         }
@@ -136,5 +142,15 @@ public final class Log {
             return "ReLoot++ " + message;
         }
         return "ReLoot++ [" + module + "] " + message;
+    }
+
+    /** Formats a SLF4J-style message + args array to a plain string for the debug file. */
+    private static String resolveArgs(String message, Object[] args) {
+        if (args == null || args.length == 0) return message != null ? message : "";
+        try {
+            return MessageFormatter.arrayFormat(message, args).getMessage();
+        } catch (Exception e) {
+            return message != null ? message : "";
+        }
     }
 }

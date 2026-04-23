@@ -68,7 +68,11 @@ public final class LegacyEntityIdFixer {
             return raw;
         }
         String mapped = mapLegacyEntityId(raw, new NbtCompound(), reporter, context);
-        return mapped == null ? raw : mapped;
+        String result = mapped == null ? raw : mapped;
+        if (!result.equals(raw)) {
+            Log.trace("Legacy", "EntityId: {} → {}", raw, result);
+        }
+        return result;
     }
 
     public static boolean fixEntityId(NbtCompound nbt, LegacyWarnReporter reporter, String context) {

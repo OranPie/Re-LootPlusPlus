@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
 import ie.orangep.reLootplusplus.lucky.attr.LuckyAttr;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
@@ -39,6 +40,7 @@ public final class LuckyItemDropAction {
         // Normalize legacy item ID
         String normalizedId = LegacyEntityIdFixer.normalizeItemId(rawId, ctx.warnReporter(), ctx.sourceLoc().toString());
         if (normalizedId == null) normalizedId = rawId;
+        Log.trace("LuckyDrop", "Item: raw={} → id={}", rawId, normalizedId);
         Identifier id = Identifier.tryParse(normalizedId);
         if (id == null || !Registry.ITEM.containsId(id)) {
             ctx.warnReporter().warn("LuckyItemDrop", "unknown item " + rawId, ctx.sourceLoc());
@@ -90,6 +92,7 @@ public final class LuckyItemDropAction {
             stack
         );
         ctx.world().spawnEntity(entity);
+        Log.trace("LuckyDrop", "Item spawned: {} x{} @ {}", normalizedId, stack.getCount(), ctx.pos());
     }
 
     private static int parseAmount(LuckyDropLine drop, LuckyTemplateVars.EvalContext evalCtx) {

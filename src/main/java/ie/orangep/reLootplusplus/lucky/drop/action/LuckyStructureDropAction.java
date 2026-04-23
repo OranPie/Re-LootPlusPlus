@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
@@ -87,6 +88,7 @@ public final class LuckyStructureDropAction {
         BlockPos placePos = resolvePos(drop, ctx, evalCtx);
         BlockRotation rotation = resolveRotation(drop, ctx, evalCtx);
 
+        Log.trace("LuckyDrop", "Structure place: id={} file={} pos={} rotation={}", structId, entry.file(), placePos, rotation);
         StructurePlacer.place(structure, ctx.world(), placePos,
             entry.centerX(), entry.centerY(), entry.centerZ(),
             entry.blockMode(), rotation);

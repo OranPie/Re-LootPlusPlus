@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
@@ -38,6 +39,7 @@ public final class LuckyBlockDropAction {
         // Normalize block ID (blocks share the same namespace conventions as items)
         String normalizedId = LegacyEntityIdFixer.normalizeItemId(rawId, ctx.warnReporter(), ctx.sourceLoc().toString());
         if (normalizedId == null) normalizedId = rawId;
+        Log.trace("LuckyDrop", "Block: raw={} → id={}", rawId, normalizedId);
         Identifier id = Identifier.tryParse(normalizedId);
         if (id == null || !Registry.BLOCK.containsId(id)) {
             ctx.warnReporter().warn("LuckyBlockDrop", "unknown block " + rawId, ctx.sourceLoc());
@@ -51,6 +53,7 @@ public final class LuckyBlockDropAction {
         // Set block
         BlockState state = block.getDefaultState();
         ctx.world().setBlockState(targetPos, state, Block.NOTIFY_ALL);
+        Log.trace("LuckyDrop", "Block placed: {} @ {}", normalizedId, targetPos);
 
         // Tile entity NBT
         String tileNbtRaw = drop.getString("tileEntity");

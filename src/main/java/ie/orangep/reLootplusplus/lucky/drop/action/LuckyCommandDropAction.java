@@ -1,6 +1,7 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
 import ie.orangep.reLootplusplus.command.exec.ExecContext;
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
 import ie.orangep.reLootplusplus.lucky.template.LuckyTemplateVars;
@@ -46,6 +47,7 @@ public final class LuckyCommandDropAction {
     private static void runCommand(String command, LuckyDropLine drop, LuckyDropContext ctx) {
         // Strip leading slash if present
         if (command.startsWith("/")) command = command.substring(1);
+        Log.trace("LuckyDrop", "Command: /{}", preview(command));
 
         if (isTeleportCommand(command)) {
             ExecContext execCtx = new ExecContext(

@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.drop.action;
 
+import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
@@ -73,6 +74,7 @@ public final class LuckyEntityDropAction {
                 "entity shorthand id blank after normalization: " + typeName, ctx.sourceLoc());
             return;
         }
+        Log.trace("LuckyDrop", "Entity shorthand: raw={} → id={}", entityId, normalizedEntityId);
         boolean isFallingBlock = "minecraft:falling_block".equalsIgnoreCase(normalizedEntityId);
         if (isFallingBlock) {
             String blockId = drop.rawId();
@@ -116,6 +118,7 @@ public final class LuckyEntityDropAction {
 
         if (!entity.isRemoved()) {
             ctx.world().spawnEntity(entity);
+            Log.trace("LuckyDrop", "Entity shorthand spawned: {} @ {}", normalizedEntityId, spawnPos);
         } else {
             ctx.warnReporter().warn("LuckyEntityDrop",
                 "entity was discarded before spawn (invalid NBT/item?) — skipping",
@@ -156,6 +159,7 @@ public final class LuckyEntityDropAction {
             ctx.warnReporter().warn("LuckyEntityDrop", "entity id blank after normalization: " + rawId, ctx.sourceLoc());
             return;
         }
+        Log.trace("LuckyDrop", "Entity: raw={} → id={}", rawId, normalizedId);
 
         // Build NBT — supports both DictAttr and StringAttr NBTTag values
         NbtCompound tag = new NbtCompound();

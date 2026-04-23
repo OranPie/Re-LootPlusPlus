@@ -42,7 +42,9 @@ import ie.orangep.reLootplusplus.config.loader.EntityDropsLoader;
 import ie.orangep.reLootplusplus.hooks.ChestLootHook;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyChestTypeMapper;
 import ie.orangep.reLootplusplus.diagnostic.DiagnosticExporter;
+import ie.orangep.reLootplusplus.diagnostic.DebugFileWriter;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.util.List;
 
@@ -52,6 +54,14 @@ public final class Bootstrap {
         ModRecipes.register();
 
         ReLootPlusPlusConfig config = ReLootPlusPlusConfig.load();
+        // Open debug file writer when detail level is DETAIL or higher
+        if (Log.detailLevel().ordinal() >= Log.DetailLevel.DETAIL.ordinal()) {
+            String filters = config.logDetailFilters == null || config.logDetailFilters.isEmpty()
+                ? "all" : String.join(",", config.logDetailFilters);
+            DebugFileWriter.open(config.resolveExportDir(FabricLoader.getInstance().getGameDir()),
+                config.logDetailLevel != null ? config.logDetailLevel : "detail", filters);
+            Runtime.getRuntime().addShutdownHook(new Thread(DebugFileWriter::close, "re-lpp-debug-log-closer"));
+        }
         Log.info(
             "Bootstrap",
             "Legacy warning console: enabled={}, perTypeLimit={}, summary={}; detailLog={}, filters={}",

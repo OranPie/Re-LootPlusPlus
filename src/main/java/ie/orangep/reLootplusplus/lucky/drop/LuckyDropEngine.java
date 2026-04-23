@@ -43,6 +43,7 @@ public final class LuckyDropEngine {
 
         Log.debug("LuckyDrop", String.format("[ENGINE] evaluate — parsedDrops=%d luck=%d pos=%s",
             drops.size(), ctx.luck(), ctx.pos()));
+        Log.trace("LuckyDrop", "Rolling {} candidates luck={} pos={}", drops.size(), ctx.luck(), ctx.pos());
 
         Random random = ctx.world().getRandom();
         LuckyDropLine selected = LuckyDropRoller.roll(drops, ctx.luck(), random);
