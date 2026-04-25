@@ -1,11 +1,8 @@
 package ie.orangep.reLootplusplus.client.screen;
 
 import ie.orangep.reLootplusplus.config.AddonDisableStore;
-import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonData;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonProperties;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyStructureEntry;
+import ie.orangep.reLootplusplus.bootstrap.LuckyBootstrap;
+import ie.orangep.reLootplusplus.bootstrap.LuckyCompat;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.resourcepack.AddonResourceIndex;
 import ie.orangep.reLootplusplus.runtime.RuntimeState;
@@ -43,7 +40,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
 
     private final Screen parent;
     private final AddonPack pack;
-    private final LuckyAddonData data;
+    private final LuckyBootstrap.LuckyPackView luckyView;
 
     private int activeTab = TAB_OVERVIEW;
     private List<int[]> tabBounds = List.of();
@@ -64,8 +61,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         super(new TranslatableText("menu.relootplusplus.pack_detail.title", pack.id()));
         this.parent = parent;
         this.pack   = pack;
-        this.data   = LuckyAddonLoader.getAddonDataList().stream()
-            .filter(d -> d.packId().equals(pack.id())).findFirst().orElse(null);
+        this.luckyView = LuckyCompat.get().getPackView(pack.id());
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -181,17 +177,17 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
                 actionButton.setMessage(new TranslatableText("menu.relootplusplus.item_details"));
             }
             case TAB_DROPS -> {
-                List<LuckyDropLine> drops = data != null ? data.parsedDrops() : List.of();
-                for (int i = 0; i < drops.size(); i++) {
-                    listWidget.addEntryRaw(new DropRow(i, drops.get(i)));
+                List<LuckyBootstrap.DropLineView> drops = LuckyCompat.get().getDropViews(pack.id());
+                for (LuckyBootstrap.DropLineView v : drops) {
+                    listWidget.addEntryRaw(new DropRow(v));
                 }
                 actionButton.visible = true;
                 int dc = drops.size();
                 actionButton.setMessage(new LiteralText("✦ All Drops (" + dc + ")"));
             }
             case TAB_STRUCTURES -> {
-                List<LuckyStructureEntry> structs = data != null ? data.structureEntries() : List.of();
-                for (LuckyStructureEntry s : structs) {
+                List<LuckyBootstrap.StructureView> structs = LuckyCompat.get().getStructureViews(pack.id());
+                for (LuckyBootstrap.StructureView s : structs) {
                     listWidget.addEntryRaw(new StructureRow(s));
                 }
             }
@@ -237,21 +233,14 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
 
         // ── Drop / content counts ───────────────────────────────────────
         y += 4; // visual spacer
-        if (data != null) {
-            y = LppUi.drawInfoRow(ms, x, y, "Drops",       String.valueOf(data.parsedDrops().size()),       maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Bow drops",   String.valueOf(data.parsedBowDrops().size()),     maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Structures",  String.valueOf(data.structureEntries().size()),    maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Natural gen", String.valueOf(data.naturalGenEntries().size()),   maxW, this.textRenderer);
-
-            boolean hasPlugin = data.pluginInit() != null;
-            y = LppUi.drawInfoRow(ms, x, y, "plugin_init", hasPlugin ? "present" : "absent", maxW, this.textRenderer);
-
-            if (data.properties() != null) {
-                LuckyAddonProperties props = data.properties();
-                y = LppUi.drawInfoRow(ms, x, y, "Properties",
-                    "spawnRate=" + props.spawnRate() + "  strChance=" + props.structureChance()
-                    + "  creative=" + props.doDropsOnCreativeMode(),
-                    maxW, this.textRenderer);
+        if (luckyView != null) {
+            y = LppUi.drawInfoRow(ms, x, y, "Drops",       String.valueOf(luckyView.dropCount()),       maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Bow drops",   String.valueOf(luckyView.bowDropCount()),     maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Structures",  String.valueOf(luckyView.structureCount()),    maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Natural gen", String.valueOf(luckyView.naturalGenCount()),   maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "plugin_init", luckyView.hasPluginInit() ? "present" : "absent", maxW, this.textRenderer);
+            if (luckyView.propertiesSummary() != null) {
+                y = LppUi.drawInfoRow(ms, x, y, "Properties", luckyView.propertiesSummary(), maxW, this.textRenderer);
             }
         } else {
             this.textRenderer.drawWithShadow(ms,
@@ -307,8 +296,8 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         switch (activeTab) {
             case TAB_ITEMS -> openItemDetail();
             case TAB_DROPS -> {
-                List<LuckyDropLine> drops = data != null ? data.parsedDrops() : List.of();
-                this.client.setScreen(new ReLootPlusPlusDropLinesScreen(this, pack.id(), drops));
+                Object screen = LuckyCompat.createDropLinesScreen(this, pack.id());
+                if (screen != null) this.client.setScreen((Screen) screen);
             }
             case TAB_TEXTURES -> this.client.setScreen(new PackTextureGalleryScreen(this, pack));
         }
@@ -320,9 +309,9 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
     }
 
     private List<String> tabLabels() {
-        int drops   = data != null ? data.parsedDrops().size() : 0;
+        int drops   = luckyView != null ? luckyView.dropCount() : 0;
         int items   = AddonResourceIndex.scanItemModels(pack).size();
-        int structs = data != null ? data.structureEntries().size() : 0;
+        int structs = luckyView != null ? luckyView.structureCount() : 0;
         int texs    = AddonResourceIndex.scanAllTextures(pack).size();
         return List.of(
             "Overview",
@@ -415,11 +404,10 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
 
     private final class DropRow
             extends AlwaysSelectedEntryListWidget.Entry<DropRow> {
-        private final int           idx;
-        private final LuckyDropLine drop;
-        private long                lastClick;
+        private final LuckyBootstrap.DropLineView view;
+        private long lastClick;
 
-        DropRow(int idx, LuckyDropLine drop) { this.idx = idx; this.drop = drop; }
+        DropRow(LuckyBootstrap.DropLineView view) { this.view = view; }
 
         @Override
         public void render(MatrixStack ms, int entryIdx, int y, int x, int eW, int eH,
@@ -427,7 +415,7 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
             if (hov) LppUi.fillRect(ms, x, y, x + eW, y + eH, LppUi.HOVER_BG);
             else if (entryIdx % 2 == 0) LppUi.fillRect(ms, x, y, x + eW, y + eH, LppUi.STRIPE);
 
-            String type  = drop.isGroup() ? "group" : (drop.type() != null ? drop.type() : "?");
+            String type  = view.type();
             int    color = LppUi.typeColor(type);
             LppUi.stripe(ms, x, y, eH, color);
 
@@ -435,40 +423,31 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
                 type.substring(0, Math.min(4, type.length())).toUpperCase(Locale.ROOT),
                 color, textRenderer);
 
-            String label = buildDropLabel(drop);
+            String label = view.label();
             int    lx    = x + 6 + bW + 4;
-            textRenderer.drawWithShadow(ms, new LiteralText("#" + (idx + 1)), lx, y + (eH - 8) / 2, LppUi.C_DIM);
-            lx += textRenderer.getWidth("#" + (idx + 1)) + 4;
+            textRenderer.drawWithShadow(ms, new LiteralText("#" + (view.index() + 1)), lx, y + (eH - 8) / 2, LppUi.C_DIM);
+            lx += textRenderer.getWidth("#" + (view.index() + 1)) + 4;
 
             int    maxLW = eW - (lx - x) - 80;
             textRenderer.drawWithShadow(ms,
                 new LiteralText(LppUi.clip(label, maxLW, textRenderer)),
                 lx, y + (eH - 8) / 2, LppUi.C_BODY);
 
-            int    lw = drop.luckWeight();
+            int    lw = view.luckWeight();
             String r  = (lw >= 0 ? "+" : "") + lw;
-            if (drop.chance() < 1f) r += "  " + String.format("%.0f%%", drop.chance() * 100f);
+            if (view.chance() < 1f) r += "  " + String.format("%.0f%%", view.chance() * 100f);
             textRenderer.drawWithShadow(ms, new LiteralText(r),
                 x + eW - textRenderer.getWidth(r) - 8, y + (eH - 8) / 2, LppUi.C_NUM);
         }
 
-        private static String buildDropLabel(LuckyDropLine d) {
-            if (d.isGroup()) return "group (" + (d.groupEntries() != null ? d.groupEntries().size() : 0) + ")";
-            String id = d.rawId();
-            if (id != null && !id.isBlank()) return id;
-            String cmd = d.getString("command");
-            if (cmd != null && !cmd.isBlank()) return "/" + (cmd.length() > 40 ? cmd.substring(0,40)+"…" : cmd);
-            return "(no id)";
-        }
-
-        @Override public Text getNarration() { return new LiteralText(drop.isGroup() ? "group" : (drop.rawId() != null ? drop.rawId() : "")); }
+        @Override public Text getNarration() { return new LiteralText(view.label()); }
 
         @Override public boolean mouseClicked(double mx, double my, int btn) {
             listWidget.selectRaw(this);
             long now = System.currentTimeMillis();
             if (now - lastClick < 400) {
-                String raw = drop.toDisplayString();
-                if (!raw.isBlank()) {
+                String raw = view.displayString();
+                if (raw != null && !raw.isBlank()) {
                     client.setScreen(new ReLootPlusPlusRawLineScreen(ReLootPlusPlusPackDetailScreen.this, raw));
                 }
             }
@@ -479,8 +458,8 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
 
     private final class StructureRow
             extends AlwaysSelectedEntryListWidget.Entry<StructureRow> {
-        private final LuckyStructureEntry entry;
-        StructureRow(LuckyStructureEntry entry) { this.entry = entry; }
+        private final LuckyBootstrap.StructureView entry;
+        StructureRow(LuckyBootstrap.StructureView entry) { this.entry = entry; }
 
         @Override
         public void render(MatrixStack ms, int idx, int y, int x, int eW, int eH,

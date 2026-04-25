@@ -15,6 +15,12 @@
     ],
     "main": [
       "ie.orangep.reLootplusplus.ReLootPlusPlus"
+    ],
+    "re-lpp:lucky": [
+      "ie.orangep.reLootplusplus.bootstrap.LuckyBootstrapImpl"
+    ],
+    "re-lpp:lucky-client": [
+      "ie.orangep.reLootplusplus.bootstrap.LuckyCompatClient"
     ]
   },
   "mixins": [

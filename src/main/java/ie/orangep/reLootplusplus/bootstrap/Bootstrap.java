@@ -28,11 +28,6 @@ import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import ie.orangep.reLootplusplus.runtime.StackSizeRegistry;
 import ie.orangep.reLootplusplus.runtime.trigger.TriggerType;
 import ie.orangep.reLootplusplus.hooks.HookInstaller;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
-import ie.orangep.reLootplusplus.lucky.crafting.LuckyLuckCraftingLoader;
-import ie.orangep.reLootplusplus.lucky.registry.AddonLuckyRegistrar;
-import ie.orangep.reLootplusplus.lucky.registry.LuckyRegistrar;
-import ie.orangep.reLootplusplus.lucky.worldgen.LuckyNaturalGenRegistrar;
 import ie.orangep.reLootplusplus.registry.DynamicBlockRegistrar;
 import ie.orangep.reLootplusplus.registry.DynamicItemRegistrar;
 import ie.orangep.reLootplusplus.registry.EntityRegistrar;
@@ -160,8 +155,7 @@ public final class Bootstrap {
         report.putCount("entityDropAdds", entityDropAdds.size());
 
         // Phase 3 (Lucky): load addon drops.txt / bow_drops.txt and luck_crafting.txt from all packs
-        LuckyAddonLoader.load(packs, warnReporter);
-        LuckyLuckCraftingLoader.load(packs, warnReporter);
+        LuckyCompat.get().onPacksLoaded(packs, warnReporter);
 
         if (config.dryRun) {
             report.setUniqueWarnCount(warnReporter.uniqueWarnCount());
@@ -174,14 +168,8 @@ public final class Bootstrap {
 
         // Force static registration
         EntityRegistrar.THROWN_ENTITY.toString();
-        // Phase 4 (Lucky): register Lucky Block content under lucky: namespace
-        LuckyRegistrar.register();
-        // Phase 4 (Lucky): register per-addon Lucky Blocks/items
-        AddonLuckyRegistrar.register(LuckyAddonLoader.getAddonDataList());
-        // Phase 4 (Lucky): register natural gen features for addon lucky blocks
-        if (config.naturalGenEnabled) {
-            LuckyNaturalGenRegistrar.register(LuckyAddonLoader.getAddonDataList());
-        }
+        // Phase 4 (Lucky): delegate all Lucky Block registration to luckyCompat module
+        LuckyCompat.get().registerContent(config.naturalGenEnabled);
         DynamicBlockRegistrar blockRegistrar = new DynamicBlockRegistrar(warnReporter, config.normalizedDuplicateStrategy());
         blockRegistrar.registerAll(blockAdditions);
 

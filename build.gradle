@@ -28,6 +28,14 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
+sourceSets {
+    luckyCompat {
+        java.srcDirs = ['src/lucky-compat/java']
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
 processResources {
     inputs.property "version", project.version
     inputs.property "minecraft_version", project.minecraft_version
@@ -65,6 +73,7 @@ java {
 }
 
 jar {
+    from sourceSets.luckyCompat.output
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}" }
     }

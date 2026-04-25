@@ -3,8 +3,7 @@ package ie.orangep.reLootplusplus.client.screen;
 import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import ie.orangep.reLootplusplus.diagnostic.WarnEntry;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonData;
-import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
+import ie.orangep.reLootplusplus.bootstrap.LuckyCompat;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.pack.PackDiscovery;
 import ie.orangep.reLootplusplus.runtime.RuntimeState;
@@ -187,8 +186,7 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
 
     private void computeStats() {
         totalPacks = allEntries.size();
-        totalDrops = LuckyAddonLoader.getAddonDataList().stream()
-            .mapToInt(d -> d.parsedDrops().size()).sum();
+        totalDrops = allEntries.stream().mapToInt(AddonPackEntry::dropCount).sum();
     }
 
     private List<AddonPackEntry> loadPacks() {
@@ -207,11 +205,7 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
     }
 
     private static int getDropCount(String packId) {
-        return LuckyAddonLoader.getAddonDataList().stream()
-            .filter(d -> d.packId().equals(packId))
-            .findFirst()
-            .map(d -> d.parsedDrops().size())
-            .orElse(0);
+        return LuckyCompat.get().getDropViews(packId).size();
     }
 
     /** Called by child detail screens when they toggle a pack's enabled state. */
@@ -239,11 +233,8 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
         AddonPackListWidget.Entry entry = listWidget.getSelectedOrNull();
         if (entry == null) return;
         String packId = entry.data.pack().id();
-        LuckyAddonData data = LuckyAddonLoader.getAddonDataList().stream()
-            .filter(d -> d.packId().equals(packId)).findFirst().orElse(null);
-        java.util.List<ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine> drops =
-            data != null ? data.parsedDrops() : java.util.Collections.emptyList();
-        this.client.setScreen(new ReLootPlusPlusDropLinesScreen(this, packId, drops));
+        Object screen = LuckyCompat.createDropLinesScreen(this, packId);
+        if (screen != null) this.client.setScreen((net.minecraft.client.gui.screen.Screen) screen);
     }
 
     private void reloadResources() {

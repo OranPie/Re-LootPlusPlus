@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.resourcepack;
 
 import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
 import ie.orangep.reLootplusplus.diagnostic.Log;
+import ie.orangep.reLootplusplus.bootstrap.LuckyCompat;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.pack.PackDiscovery;
 import net.minecraft.resource.ResourcePack;
@@ -32,16 +33,19 @@ public final class ExternalPackProvider implements ResourcePackProvider {
         }
 
         // Inject synthetic blockstate/model pack for addon blocks BEFORE addon zips
-        ResourcePackProfile syntheticProfile = ResourcePackProfile.of(
-            "relootplusplus:addon_blocks_synthetic",
-            true,
-            () -> new AddonBlockResourcePack(),
-            factory,
-            ResourcePackProfile.InsertionPosition.TOP,
-            ResourcePackSource.PACK_SOURCE_BUILTIN
-        );
-        if (syntheticProfile != null) {
-            profileAdder.accept(syntheticProfile);
+        ResourcePack addonBlockPack = LuckyCompat.get().createAddonBlockResourcePack();
+        if (addonBlockPack != null) {
+            ResourcePackProfile syntheticProfile = ResourcePackProfile.of(
+                "relootplusplus:addon_blocks_synthetic",
+                true,
+                () -> addonBlockPack,
+                factory,
+                ResourcePackProfile.InsertionPosition.TOP,
+                ResourcePackSource.PACK_SOURCE_BUILTIN
+            );
+            if (syntheticProfile != null) {
+                profileAdder.accept(syntheticProfile);
+            }
         }
 
         PackDiscovery discovery = new PackDiscovery(config);
