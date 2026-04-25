@@ -14,6 +14,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,7 +36,10 @@ public final class CombinedResourcePack implements ResourcePack {
         this.packs = List.copyOf(packs);
         Map<String, ResourcePack> map = new LinkedHashMap<>();
         for (AddonPack pack : packs) {
-            map.put(pack.id(), new ExternalZipResourcePack(pack.zipPath(), pack.id()));
+            ResourcePack rp = Files.isDirectory(pack.zipPath())
+                ? new ExternalDirResourcePack(pack.zipPath(), pack.id())
+                : new ExternalZipResourcePack(pack.zipPath(), pack.id());
+            map.put(pack.id(), rp);
         }
         this.delegates = map;
     }

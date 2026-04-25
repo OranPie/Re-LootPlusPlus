@@ -258,4 +258,40 @@ public final class AddonResourceIndex {
         }
         return null;
     }
+
+    /**
+     * Returns the set of asset namespaces present in the pack
+     * (derived by scanning {@code assets/<namespace>/} directories).
+     */
+    public static java.util.Set<String> getNamespaces(AddonPack pack) {
+        Path path = pack.zipPath();
+        java.util.Set<String> ns = new java.util.LinkedHashSet<>();
+        try {
+            if (Files.isDirectory(path)) {
+                Path assetsDir = path.resolve("assets");
+                if (Files.isDirectory(assetsDir)) {
+                    try (var ds = Files.newDirectoryStream(assetsDir)) {
+                        for (Path child : ds) {
+                            if (Files.isDirectory(child)) ns.add(child.getFileName().toString());
+                        }
+                    }
+                }
+            } else if (Files.isRegularFile(path)) {
+                try (ZipFile zip = new ZipFile(path.toFile())) {
+                    zip.stream().filter(e -> !e.isDirectory()).forEach(e -> {
+                        String n = e.getName();
+                        if (n.startsWith("assets/")) {
+                            int slash = n.indexOf('/', "assets/".length());
+                            if (slash > "assets/".length()) {
+                                ns.add(n.substring("assets/".length(), slash));
+                            }
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            Log.error("ResourcePack", "Failed to list namespaces for {}", path, e);
+        }
+        return ns;
+    }
 }

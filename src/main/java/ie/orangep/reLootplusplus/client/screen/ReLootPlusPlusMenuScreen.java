@@ -2,10 +2,12 @@ package ie.orangep.reLootplusplus.client.screen;
 
 import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.config.ReLootPlusPlusConfig;
+import ie.orangep.reLootplusplus.diagnostic.WarnEntry;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonData;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.pack.PackDiscovery;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
@@ -16,6 +18,7 @@ import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +45,9 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
     private ButtonWidget detailButton;
     private ButtonWidget dropsButton;
     private ButtonWidget reloadButton;
+
+    /** True when at least one pack was toggled since last resource reload. */
+    private boolean pendingReload = false;
 
     // Aggregate stats shown in header
     private int totalDrops;
@@ -97,7 +103,7 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
         // Back button (top-left)
         this.addDrawableChild(new ButtonWidget(8, 8, 60, 20,
             new TranslatableText("menu.relootplusplus.back"),
-            b -> this.client.setScreen(parent)));
+            b -> closeWithReloadIfNeeded()));
 
         updateButtons();
     }
@@ -120,6 +126,16 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
         LppUi.sepH(ms, LIST_TOP - 1, this.width);
 
         listWidget.render(ms, mouseX, mouseY, delta);
+
+        // Pending reload indicator (shown above footer when dirty)
+        if (pendingReload) {
+            String reloadMsg = "⟳ Pack changes pending — click Reload or close to apply";
+            int msgW = this.textRenderer.getWidth(reloadMsg);
+            int msgX = (this.width - msgW) / 2;
+            int msgY = this.height - LppUi.FTR_H - 14;
+            LppUi.fillRect(ms, msgX - 6, msgY - 2, msgX + msgW + 6, msgY + this.textRenderer.fontHeight + 2, 0xCC332200);
+            this.textRenderer.drawWithShadow(ms, new LiteralText(reloadMsg), msgX, msgY, 0xFFAA55);
+        }
 
         // Hint in footer
         Text hint = new TranslatableText("menu.relootplusplus.hint");
@@ -183,7 +199,8 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
         for (AddonPack pack : packs) {
             boolean hasAssets = hasAssets(pack.zipPath());
             int dropCount = getDropCount(pack.id());
-            entries.add(new AddonPackEntry(pack, hasAssets, dropCount,
+            int warnCount = warnCountForPack(pack.id());
+            entries.add(new AddonPackEntry(pack, hasAssets, dropCount, warnCount,
                 AddonDisableStore.isEnabled(pack.id())));
         }
         return entries;
@@ -197,12 +214,18 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
             .orElse(0);
     }
 
+    /** Called by child detail screens when they toggle a pack's enabled state. */
+    public void markPendingReload() {
+        this.pendingReload = true;
+    }
+
     private void toggleSelected() {
         AddonPackListWidget.Entry entry = listWidget.getSelectedOrNull();
         if (entry == null) return;
         boolean enabled = !entry.data.enabled();
         AddonDisableStore.setEnabled(entry.data.pack().id(), enabled);
         entry.data.setEnabled(enabled);
+        pendingReload = true;
         updateButtons();
     }
 
@@ -224,7 +247,27 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
     }
 
     private void reloadResources() {
-        if (this.client != null) this.client.reloadResources();
+        if (this.client != null) {
+            pendingReload = false;
+            this.client.reloadResources();
+        }
+    }
+
+    private void closeWithReloadIfNeeded() {
+        if (pendingReload && this.client != null) {
+            pendingReload = false;
+            this.client.reloadResources();
+        }
+        this.client.setScreen(parent);
+    }
+
+    /** Returns the legacy warn count attributed to the given pack id. */
+    private static int warnCountForPack(String packId) {
+        var reporter = RuntimeState.warnReporter();
+        if (reporter == null) return 0;
+        return (int) reporter.entries().stream()
+            .filter(e -> e.sourceLoc() != null && packId.equals(e.sourceLoc().packId()))
+            .count();
     }
 
     private void updateButtons() {
@@ -235,9 +278,15 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
     }
 
     private static boolean hasAssets(Path zipPath) {
-        if (zipPath == null || !zipPath.toString().endsWith(".zip")) return false;
+        if (zipPath == null) return false;
+        if (Files.isDirectory(zipPath)) {
+            return Files.isDirectory(zipPath.resolve("assets"));
+        }
         try (ZipFile zip = new ZipFile(zipPath.toFile())) {
-            return zip.stream().anyMatch(e -> e.getName().startsWith("assets/"));
+            return zip.stream().anyMatch(e -> {
+                String n = e.getName();
+                return n.startsWith("assets/") || n.contains("/assets/");
+            });
         } catch (Exception ignored) {
             return false;
         }
@@ -249,18 +298,21 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
         private final AddonPack pack;
         private final boolean   hasAssets;
         private final int       dropCount;
+        private final int       warnCount;
         private boolean         enabled;
 
-        AddonPackEntry(AddonPack pack, boolean hasAssets, int dropCount, boolean enabled) {
+        AddonPackEntry(AddonPack pack, boolean hasAssets, int dropCount, int warnCount, boolean enabled) {
             this.pack      = pack;
             this.hasAssets = hasAssets;
             this.dropCount = dropCount;
+            this.warnCount = warnCount;
             this.enabled   = enabled;
         }
 
         AddonPack pack()      { return pack;      }
         boolean   hasAssets() { return hasAssets; }
         int       dropCount() { return dropCount; }
+        int       warnCount() { return warnCount; }
         boolean   enabled()   { return enabled;   }
         void      setEnabled(boolean v) { this.enabled = v; }
     }
@@ -332,7 +384,7 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
                 textRenderer.drawWithShadow(ms, new LiteralText(statusLabel),
                     sX + 4, y + 5, statusCol);
 
-                // ── Row 2: source path + drop count chip + ZIP/DIR badge ─────
+                // ── Row 2: source path + drop count chip + warn chip + ZIP/DIR badge ─────
                 Path zip  = data.pack().zipPath();
                 String src = zip != null ? zip.getFileName().toString() : "";
                 boolean isZip  = src.endsWith(".zip");
@@ -340,10 +392,21 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
                 String  typeBadge = isZip ? "ZIP" : "DIR";
                 int     typeBW = textRenderer.getWidth(typeBadge) + 6;
 
-                // Drop count chip
+                // Warn count chip (orange if warns > 0)
+                int warnCount = data.warnCount();
+                String warnLabel = "⚠ " + warnCount;
+                int warnChipCol = warnCount > 0 ? 0xFFFF8833 : 0xFF445566;
+                int warnW = textRenderer.getWidth(warnLabel) + 8;
+                int warnX = x + entryWidth - warnW - 4;
+                LppUi.fillRect(ms, warnX, y + 17, warnX + warnW, y + 28,
+                    (warnChipCol & 0x00FFFFFF) | 0x44000000);
+                textRenderer.drawWithShadow(ms, new LiteralText(warnLabel),
+                    warnX + 4, y + 19, warnChipCol);
+
+                // Drop count chip (left of warn chip)
                 String dropLabel = "✦ " + data.dropCount();
                 int    dcW = textRenderer.getWidth(dropLabel) + 8;
-                int    dcX = x + entryWidth - dcW - 4;
+                int    dcX = warnX - dcW - 4;
                 LppUi.fillRect(ms, dcX, y + 17, dcX + dcW, y + 28,
                     (dropChipCol & 0x00FFFFFF) | 0x44000000);
                 textRenderer.drawWithShadow(ms, new LiteralText(dropLabel),

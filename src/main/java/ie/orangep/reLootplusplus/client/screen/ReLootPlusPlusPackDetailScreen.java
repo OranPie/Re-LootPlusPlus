@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.client.screen;
 
+import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonData;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonLoader;
@@ -7,6 +8,7 @@ import ie.orangep.reLootplusplus.lucky.loader.LuckyAddonProperties;
 import ie.orangep.reLootplusplus.lucky.loader.LuckyStructureEntry;
 import ie.orangep.reLootplusplus.pack.AddonPack;
 import ie.orangep.reLootplusplus.resourcepack.AddonResourceIndex;
+import ie.orangep.reLootplusplus.runtime.RuntimeState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
@@ -21,8 +23,10 @@ import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.registry.Registry;
 
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Pack detail screen — tabs: Overview / Items / Drops / Structures / Textures.
@@ -48,6 +52,10 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
     private GenericListWidget listWidget;
     private ButtonWidget actionButton;
     private ButtonWidget detailButton;
+    private ButtonWidget toggleButton;
+
+    /** Whether this screen toggled the pack (so parent can show pending-reload). */
+    private boolean didToggle = false;
 
     // Items tab selection
     private AddonResourceIndex.ItemModelInfo selectedItem;
@@ -73,6 +81,20 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         this.addDrawableChild(new ButtonWidget(8, this.height - LppUi.FTR_H + 6, 60, 20,
             new TranslatableText("menu.relootplusplus.back"),
             b -> this.client.setScreen(parent)));
+
+        // Toggle enable/disable button (left of action button in footer)
+        toggleButton = new ButtonWidget(76, this.height - LppUi.FTR_H + 6, 110, 20,
+            buildToggleLabel(), b -> {
+                boolean nowEnabled = !AddonDisableStore.isEnabled(pack.id());
+                AddonDisableStore.setEnabled(pack.id(), nowEnabled);
+                didToggle = true;
+                refreshToggleButton();
+                // Propagate pending-reload flag to parent menu screen if it is one
+                if (parent instanceof ReLootPlusPlusMenuScreen menuParent) {
+                    menuParent.markPendingReload();
+                }
+            });
+        this.addDrawableChild(toggleButton);
 
         // Action button (right side of footer — changes per tab)
         actionButton = new ButtonWidget(this.width - 120, this.height - LppUi.FTR_H + 6, 112, 20,
@@ -192,37 +214,85 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         int y = CONTENT_TOP + 10;
         int maxW = this.width - x * 2;
 
-        // Pack path
+        // ── Pack metadata ────────────────────────────────────────────────
         String src  = pack.zipPath() != null ? pack.zipPath().toString() : pack.id();
-        y = LppUi.drawInfoRow(ms, x, y, "Path", src, maxW, this.textRenderer);
+        boolean isDir = pack.zipPath() != null && Files.isDirectory(pack.zipPath());
+        y = LppUi.drawInfoRow(ms, x, y, "Source", src, maxW, this.textRenderer);
+        y = LppUi.drawInfoRow(ms, x, y, "Type",   isDir ? "Directory" : "ZIP", maxW, this.textRenderer);
 
+        boolean enabled = AddonDisableStore.isEnabled(pack.id());
+        String enabledStr = enabled ? "§aEnabled" : "§cDisabled";
+        y = LppUi.drawInfoRow(ms, x, y, "Status", enabledStr, maxW, this.textRenderer);
+
+        // Warn count — highlight in orange if > 0
+        int wc = warnCount();
+        String wcStr = wc == 0 ? "§a0  (no warnings)" : "§e" + wc + " §7(see warnings.tsv)";
+        y = LppUi.drawInfoRow(ms, x, y, "Warnings", wcStr, maxW, this.textRenderer);
+
+        // ── Drop / content counts ───────────────────────────────────────
+        y += 4; // visual spacer
         if (data != null) {
-            y = LppUi.drawInfoRow(ms, x, y, "Drops",       String.valueOf(data.parsedDrops().size()),     maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Bow drops",   String.valueOf(data.parsedBowDrops().size()),  maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Structures",  String.valueOf(data.structureEntries().size()), maxW, this.textRenderer);
-            y = LppUi.drawInfoRow(ms, x, y, "Natural gen", String.valueOf(data.naturalGenEntries().size()), maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Drops",       String.valueOf(data.parsedDrops().size()),       maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Bow drops",   String.valueOf(data.parsedBowDrops().size()),     maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Structures",  String.valueOf(data.structureEntries().size()),    maxW, this.textRenderer);
+            y = LppUi.drawInfoRow(ms, x, y, "Natural gen", String.valueOf(data.naturalGenEntries().size()),   maxW, this.textRenderer);
 
-            // Plugin init presence
             boolean hasPlugin = data.pluginInit() != null;
             y = LppUi.drawInfoRow(ms, x, y, "plugin_init", hasPlugin ? "present" : "absent", maxW, this.textRenderer);
 
-            // Properties
             if (data.properties() != null) {
                 LuckyAddonProperties props = data.properties();
                 y = LppUi.drawInfoRow(ms, x, y, "Properties",
-                    "spawnRate=" + props.spawnRate() + " strChance=" + props.structureChance()
-                    + " creative=" + props.doDropsOnCreativeMode(),
+                    "spawnRate=" + props.spawnRate() + "  strChance=" + props.structureChance()
+                    + "  creative=" + props.doDropsOnCreativeMode(),
                     maxW, this.textRenderer);
             }
         } else {
             this.textRenderer.drawWithShadow(ms,
-                new LiteralText("No drop data available for this pack."),
-                x, y, LppUi.C_DIM);
+                new LiteralText("§7No drop data available for this pack."),
+                x, y + 2, LppUi.C_DIM);
+            y += 12;
         }
 
-        // Item count from resource index
+        // ── Resource stats ──────────────────────────────────────────────
+        y += 4;
         int itemCount = AddonResourceIndex.scanItemModels(pack).size();
-        LppUi.drawInfoRow(ms, x, y, "Items", String.valueOf(itemCount), maxW, this.textRenderer);
+        y = LppUi.drawInfoRow(ms, x, y, "Items",    String.valueOf(itemCount), maxW, this.textRenderer);
+        y = LppUi.drawInfoRow(ms, x, y, "Textures", String.valueOf(texCount()), maxW, this.textRenderer);
+
+        Set<String> ns = packNamespaces();
+        if (!ns.isEmpty()) {
+            y = LppUi.drawInfoRow(ms, x, y, "Namespaces",
+                String.join(", ", ns.stream().sorted().toList()), maxW, this.textRenderer);
+        }
+    }
+
+    private Text buildToggleLabel() {
+        boolean enabled = AddonDisableStore.isEnabled(pack.id());
+        return new LiteralText(enabled ? "✗ Disable Pack" : "✔ Enable Pack");
+    }
+
+    private void refreshToggleButton() {
+        if (toggleButton != null) toggleButton.setMessage(buildToggleLabel());
+    }
+
+    /** Returns the legacy warn count attributed to this pack. */
+    private int warnCount() {
+        var reporter = RuntimeState.warnReporter();
+        if (reporter == null) return 0;
+        return (int) reporter.entries().stream()
+            .filter(e -> e.sourceLoc() != null && pack.id().equals(e.sourceLoc().packId()))
+            .count();
+    }
+
+    /** Returns the resource namespaces declared by this pack's asset tree. */
+    private Set<String> packNamespaces() {
+        return AddonResourceIndex.getNamespaces(pack);
+    }
+
+    /** Returns the total texture count for this pack. */
+    private int texCount() {
+        return AddonResourceIndex.scanAllTextures(pack).size();
     }
 
     // ── Action / button helpers ────────────────────────────────────────────
