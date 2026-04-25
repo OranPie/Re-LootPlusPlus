@@ -354,6 +354,32 @@ gamerule <ruleName> <value>
 
 ---
 
+##### `tp` / `teleport`
+
+**Syntax (entity → coordinates):**
+```
+tp <targets> <x> <y> <z>
+teleport <targets> <x> <y> <z>
+```
+
+**Syntax (entity → entity):**
+```
+tp <targets> <destEntity>
+teleport <targets> <destEntity>
+```
+
+Both `tp` and `teleport` are accepted as verb aliases and behave identically.
+
+`<targets>` is parsed by `LegacySelectorParser` (see §1). `<destEntity>` is a selector resolving to at most one entity; if it resolves to multiple, the **first** result is used. Coordinates `<x> <y> <z>` accept absolute integers/floats or `~`-relative offsets (relative to the **executor's** current position, not the target's).
+
+`successCount`: number of targets successfully teleported.
+
+**WARNs:**
+- `r=`, `rm=` in any selector parameter → `WARN [LootPP-Legacy] SelectorParam`
+- Entity-to-entity form with a selector that resolves to zero entities → WARN + `successCount = 0`
+
+---
+
 #### §2.4 `successCount` Definitions Summary
 
 | Command | `successCount` |
@@ -368,6 +394,7 @@ gamerule <ruleName> <value>
 | `summon`, `setblock`, `gamerule` | `1` on success, `0` on failure |
 | `kill` | Number of entities removed |
 | `enchant` | Number of targets successfully enchanted |
+| `tp`, `teleport` | Number of targets successfully teleported |
 | `lppcondition` | `successCount` of the executed branch |
 
 #### §2.5 Uniform Failure / Fallback Rules
@@ -746,6 +773,32 @@ gamerule <ruleName> <value>
 
 ---
 
+##### `tp` / `teleport`
+
+**语法（实体 → 坐标）：**
+```
+tp <targets> <x> <y> <z>
+teleport <targets> <x> <y> <z>
+```
+
+**语法（实体 → 实体）：**
+```
+tp <targets> <destEntity>
+teleport <targets> <destEntity>
+```
+
+`tp` 和 `teleport` 均被接受为动词别名，行为完全相同。
+
+`<targets>` 由 `LegacySelectorParser`（见 §1）解析。`<destEntity>` 是最多解析为一个实体的选择器；若解析为多个实体，则使用**第一个**结果。坐标 `<x> <y> <z>` 接受绝对整数/浮点数或 `~` 相对偏移量（相对于**执行者**的当前位置，而非目标位置）。
+
+`successCount`：成功传送的目标数量。
+
+**WARN：**
+- 任意选择器参数中的 `r=`、`rm=` → `WARN [LootPP-Legacy] SelectorParam`
+- 实体到实体形式中目标选择器解析为零个实体 → WARN + `successCount = 0`
+
+---
+
 #### §2.4 `successCount` 定义汇总
 
 | 命令 | `successCount` |
@@ -760,6 +813,7 @@ gamerule <ruleName> <value>
 | `summon`、`setblock`、`gamerule` | 成功为 `1`，失败为 `0` |
 | `kill` | 被移除的实体数量 |
 | `enchant` | 成功附魔的目标数量 |
+| `tp`、`teleport` | 成功传送的目标数量 |
 | `lppcondition` | 所执行分支的 `successCount` |
 
 #### §2.5 统一失败 / 回退规则

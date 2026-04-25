@@ -306,6 +306,50 @@ The following constraints apply to all implementation code across all packages:
 
 ---
 
+## §8 AddonDisableStore and `/reload` Lifecycle
+
+### §8.1 AddonDisableStore Persistence
+
+**Source:** `config/AddonDisableStore.java`
+
+Pack enable/disable state is stored in a **dedicated** file at `.minecraft/config/relootplusplus_addons.json`, separate from the main `relootplusplus.json`. This design allows the in-game debug UI to toggle individual packs without rewriting or conflating the main configuration.
+
+The file is a plain JSON object mapping pack IDs (strings) to booleans:
+```json
+{
+  "lucky_fairy_addon": false,
+  "lucky_water_addon": true
+}
+```
+
+A missing key means the pack is **enabled** by default; only explicitly disabled packs have an entry.
+
+**One-time migration:** When `relootplusplus_addons.json` does not yet exist, `AddonDisableStore` reads the `disabledAddonPacks` array from the main config, writes those IDs as `false` entries into the new file, then clears `disabledAddonPacks` in the main config and saves it. After migration the two files are fully independent.
+
+### §8.2 `/reload` Interaction with PackIndex
+
+`/reload` triggers a partial re-bootstrap. The phases affected are:
+
+| Phase | On `/reload` |
+|---|---|
+| 1 — Load config | Re-read from disk |
+| 2 — Pack discovery | **Skipped** — pack list is fixed at startup |
+| 3 — Pack indexing | **Skipped** — `PackIndex` is reused as-is |
+| 4 — Parse rules | **Re-run** — all `*Loader` + `LuckyAddonLoader` |
+| 5 — Register content | **Skipped** — registries are immutable after startup |
+| 6 — World gen | **Skipped** |
+| 7 — RuntimeIndex | **Rebuilt** from freshly parsed rules |
+| 8 — Install hooks | **Skipped** — hooks remain installed |
+| 9 — Export diagnostics | **Re-run** if `exportReports=true` |
+
+**Key constraint:** Because pack discovery (phase 2) and registry writes (phase 5) are skipped, `/reload` cannot:
+- Recognize newly added addon zips dropped into `lootplusplus_addons/` while the game is running.
+- Register new dynamic items, blocks, or entities that were not present at startup.
+
+New packs and new items always require a full restart.
+
+---
+
 *End of INJECTION.md (English section)*
 
 ---
@@ -615,6 +659,50 @@ LuckyBlock 混入层的所有发现均须通过 `LegacyWarnReporter` 上报。
 6. **注册表写入仅在第 4 阶段进行。** 第 4 阶段以外的任何代码路径均不得向 Minecraft 或 Fabric 注册表写入。`Bootstrap.java` 通过断言强制执行此约束。
 
 7. **所有随机性使用 `world.random`。** 规则评估须使用 `world.random`（或 `player.getRandom()`）。在规则评估内部创建 `new Random()` 是被禁止的；这会破坏加权抽取的确定性。
+
+---
+
+## §8 AddonDisableStore 与 `/reload` 生命周期
+
+### §8.1 AddonDisableStore 持久化
+
+**源类：** `config/AddonDisableStore.java`
+
+包的启用/禁用状态存储在独立的文件 `.minecraft/config/relootplusplus_addons.json` 中，与主配置文件 `relootplusplus.json` 分开。这种设计允许游戏内调试 UI 切换单个包的状态，而不会重写或混淆主配置。
+
+该文件是将包 ID（字符串）映射到布尔值的纯 JSON 对象：
+```json
+{
+  "lucky_fairy_addon": false,
+  "lucky_water_addon": true
+}
+```
+
+键缺失表示包**默认启用**；只有明确禁用的包才有对应条目。
+
+**一次性迁移：** 当 `relootplusplus_addons.json` 尚不存在时，`AddonDisableStore` 从主配置中读取 `disabledAddonPacks` 数组，将这些 ID 以 `false` 条目写入新文件，然后清除主配置中的 `disabledAddonPacks` 并保存。迁移完成后，两个文件完全独立。
+
+### §8.2 `/reload` 与 PackIndex 的交互
+
+`/reload` 触发部分重新启动。受影响的阶段如下：
+
+| 阶段 | `/reload` 行为 |
+|---|---|
+| 1 — 加载配置 | 从磁盘重新读取 |
+| 2 — 包发现 | **跳过** — 包列表在启动时固定 |
+| 3 — 包索引 | **跳过** — `PackIndex` 原样复用 |
+| 4 — 解析规则 | **重新运行** — 所有 `*Loader` + `LuckyAddonLoader` |
+| 5 — 注册内容 | **跳过** — 启动后注册表不可变 |
+| 6 — 世界生成 | **跳过** |
+| 7 — RuntimeIndex | 从新解析的规则**重新构建** |
+| 8 — 安装钩子 | **跳过** — 钩子保持安装状态 |
+| 9 — 导出诊断 | 若 `exportReports=true` 则**重新运行** |
+
+**关键约束：** 由于包发现（第 2 阶段）和注册表写入（第 5 阶段）被跳过，`/reload` **无法**：
+- 识别游戏运行时新放入 `lootplusplus_addons/` 的附加包 zip。
+- 注册启动时不存在的新动态物品、方块或实体。
+
+新的包和新的物品始终需要完整重启。
 
 ---
 

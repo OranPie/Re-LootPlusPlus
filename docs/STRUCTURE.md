@@ -356,6 +356,65 @@ Read config text UTF-8 strict first; fall back to ISO-8859-1/CP1252. Strip leadi
 
 ---
 
+### Data Flow Narrative
+
+The full data flow from startup to a running server tick is:
+
+```
+onInitialize()
+  └─ Bootstrap.run()
+       1. load config (ReLootPlusPlusConfig)
+       2. PackDiscovery → List<AddonPack>       // zip + dir scanning
+       3. PackIndexer → PackIndex               // SourceLoc per line
+       4. *Loaders (+ LuckyAddonLoader)         // parse rules from PackIndex
+       5. DynamicItem/Block/Entity/LuckyRegistrar // ONLY registry writes happen here
+       6. World gen features registered
+       7. RuntimeIndex.build(rules)             // TriggerType × itemId → List<Rule>
+       8. HookInstaller.install()               // Fabric events wired (SERVER_STARTED)
+       9. DiagnosticExporter.export()
+
+Server tick (each tick):
+  ServerTickEvents.END_SERVER_TICK
+    └─ HookInstaller tick handler
+         for each online player (fixed scan order):
+           1. held (main hand)
+           2. wearing_armour
+           3. in_inventory
+           4. standing_on_block
+           5. inside_block
+         → RuntimeIndex.commandRules(trigger, itemId) / effectRules(trigger, itemId)
+         → RuleEngine.evaluate(rule, player, world)
+```
+
+`/reload` rebuilds only phases 4 and 7 (parse rules + rebuild RuntimeIndex). It never touches registries (phase 5) or hooks (phase 8). `PackIndex` is fixed after phase 3 and is reused as-is on `/reload`.
+
+---
+
+### RuntimeIndex Wildcard Key
+
+`RuntimeIndex.commandRules(trigger, itemId)` and `RuntimeIndex.effectRules(trigger, itemId)` support a special wildcard key `"*"`:
+
+- Rules declared with item ID `"*"` match **every** item held/worn/carried for that trigger type.
+- When resolving rules for a specific `itemId`, the index **concatenates** the direct-keyed list (for `itemId`) with the wildcard list (for `"*"`). Direct rules are returned first; wildcard rules follow.
+- If only one side has entries, only that side is returned (no null-check required).
+- **Block-keyed rules do NOT support wildcard.** `blockCommandRules(trigger, blockId)` and `blockEffectRules(trigger, blockId)` use exact-match only.
+
+This wildcard behavior enables "apply to any held item" rules without enumerating every item ID.
+
+---
+
+### AddonDisableStore
+
+**Source:** `config/AddonDisableStore.java`
+
+`AddonDisableStore` maintains a per-pack enable/disable flag persisted to a **separate JSON file** at `config/relootplusplus_addons.json` (not the main `relootplusplus.json`). This separation allows the in-game UI to toggle packs without corrupting or conflating the main config.
+
+**Migration:** On first run (when `relootplusplus_addons.json` does not yet exist), `AddonDisableStore` reads the `disabledAddonPacks` list from the main config, writes it to the new file, and clears `disabledAddonPacks` in the main config to avoid duplication.
+
+**Bootstrap interaction:** `PackDiscovery` discovers all packs first; `AddonDisableStore.isEnabled(packId)` is called **after** discovery to filter the final list. Disabled packs are excluded from indexing, parsing, and registration.
+
+---
+
 ## 中文版本（Chinese Version）
 
 # Re-LootPlusPlus — 架构说明
@@ -709,3 +768,62 @@ WARN 格式：
 
 ### 文件编码
 优先以 UTF-8 严格模式读取配置文本；失败时回退至 ISO-8859-1/CP1252。处理前剥除开头的 BOM（`\uFEFF`）。
+
+---
+
+### 数据流说明
+
+从启动到服务器 tick 运行的完整数据流如下：
+
+```
+onInitialize()
+  └─ Bootstrap.run()
+       1. 加载配置（ReLootPlusPlusConfig）
+       2. PackDiscovery → List<AddonPack>       // zip + 目录扫描
+       3. PackIndexer → PackIndex               // 每行带 SourceLoc 索引
+       4. *Loaders（含 LuckyAddonLoader）       // 从 PackIndex 解析规则
+       5. DynamicItem/Block/Entity/LuckyRegistrar // 注册表写入仅在此处
+       6. 世界生成特性注册
+       7. RuntimeIndex.build(rules)             // TriggerType × itemId → List<Rule>
+       8. HookInstaller.install()               // Fabric 事件接入（SERVER_STARTED）
+       9. DiagnosticExporter.export()
+
+服务器 tick（每 tick）：
+  ServerTickEvents.END_SERVER_TICK
+    └─ HookInstaller tick 处理器
+         对每位在线玩家（固定扫描顺序）：
+           1. held（主手）
+           2. wearing_armour
+           3. in_inventory
+           4. standing_on_block
+           5. inside_block
+         → RuntimeIndex.commandRules(trigger, itemId) / effectRules(trigger, itemId)
+         → RuleEngine.evaluate(rule, player, world)
+```
+
+`/reload` 仅重建第 4 阶段和第 7 阶段（解析规则 + 重建 RuntimeIndex），不会触碰注册表（第 5 阶段）或钩子（第 8 阶段）。`PackIndex` 在第 3 阶段后固定，`/reload` 时原样复用。
+
+---
+
+### RuntimeIndex 通配符键
+
+`RuntimeIndex.commandRules(trigger, itemId)` 和 `RuntimeIndex.effectRules(trigger, itemId)` 支持特殊通配符键 `"*"`：
+
+- 以物品 ID `"*"` 声明的规则匹配该触发器类型下**任意**手持/穿戴/携带的物品。
+- 解析特定 `itemId` 的规则时，索引将精确键（`itemId`）的列表与通配符键（`"*"`）的列表**拼接**返回。精确规则在前，通配符规则在后。
+- 若只有一侧存在条目，则只返回该侧（无需空值检查）。
+- **方块键规则不支持通配符。**`blockCommandRules(trigger, blockId)` 和 `blockEffectRules(trigger, blockId)` 仅使用精确匹配。
+
+此通配符行为可实现"适用于任何手持物品"的规则，无需枚举每个物品 ID。
+
+---
+
+### AddonDisableStore
+
+**源类：** `config/AddonDisableStore.java`
+
+`AddonDisableStore` 维护每个包的启用/禁用标志，持久化到单独的 JSON 文件 `config/relootplusplus_addons.json`（而非主配置文件 `relootplusplus.json`）。这种分离使游戏内 UI 可以切换包的状态，而不会干扰主配置。
+
+**迁移：** 首次运行时（`relootplusplus_addons.json` 尚不存在），`AddonDisableStore` 从主配置中读取 `disabledAddonPacks` 列表，写入新文件，并清除主配置中的 `disabledAddonPacks` 字段以避免重复。
+
+**与 Bootstrap 的交互：** `PackDiscovery` 首先发现所有包；`AddonDisableStore.isEnabled(packId)` 在发现之**后**被调用，用于过滤最终列表。被禁用的包将被排除在索引、解析和注册之外。

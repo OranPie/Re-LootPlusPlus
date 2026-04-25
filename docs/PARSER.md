@@ -443,6 +443,226 @@ All lines in all addition files use `_____` as the field separator. Comment line
 
 ---
 
+### §9 Lucky Block Addon — `drops.txt` Grammar
+
+**Source classes:** `lucky/attr/LuckyAttrParser.java`, `lucky/drop/LuckyDropParser.java`, `lucky/drop/LuckyDropLine.java`
+
+Lucky Block addon drop files (`drops.txt`, `bow_drops.txt`, `sword_drops.txt`, `potion_drops.txt`) use a `key=value` attribute format that is entirely distinct from the `_____`-separated Loot++ config format. This format is parsed by `LuckyAttrParser` and `LuckyDropParser`.
+
+#### §9.1 Grammar (EBNF)
+
+```ebnf
+drop-file     ::= (drop-line | comment | blank)*
+drop-line     ::= (regular-drop | group-drop) luck-suffix* chance-suffix?
+
+regular-drop  ::= attr-pair ("," attr-pair)*
+group-drop    ::= "group" count-spec? "(" group-entries ")"
+group-entries ::= drop-line (";" drop-line)*
+count-spec    ::= ":#" rand-expr ":"
+rand-expr     ::= "rand(" integer "," integer ")"
+               |  integer
+
+luck-suffix   ::= "@luck=" integer
+chance-suffix ::= "@chance=" float
+               |  "@chance"          (* bare — normalised to chance=1; WARN LuckyAttrBareChance *)
+
+attr-pair     ::= key "=" attr-value
+attr-value    ::= string-value
+               |  dict-value
+               |  list-value
+
+dict-value    ::= "(" attr-pair ("," attr-pair)* ")"
+list-value    ::= "[" attr-value (";" attr-value)* "]"
+string-value  ::= (* text not containing top-level "," / ";" / "(" / ")" / "[" / "]" / "=" *)
+
+comment       ::= "/" [^\n]*
+blank         ::= ""
+```
+
+The parser uses a bracket depth counter to correctly identify top-level delimiters `,` and `;`. Commas inside nested `dict (...)` or `list [...]` do not split attr-pairs.
+
+`@luck` and `@chance` are scanned from the **end** of the line as top-level `@` tokens (outside all brackets). They are stripped before the attr-pairs portion is parsed.
+
+#### §9.2 `@luck` and `@chance` Semantics
+
+| Suffix | Meaning |
+|---|---|
+| `@luck=N` | Signed integer; used as `luckWeight` in the `LuckyDropRoller` weight formula |
+| `@chance=P` | Float 0.0–1.0; tested **after** the luck-weighted roll selects this entry |
+| `@chance` (bare) | Treated as `chance=1.0` with WARN `LuckyAttrBareChance` |
+
+The `@chance` gate is independent of the luck roll. An entry with `@chance=0.5` is selected from the luck-weighted pool at its normal weight, then has a 50% independent probability of actually executing.
+
+#### §9.3 Well-Known Attribute Keys
+
+| Key | Applicable types | Meaning |
+|---|---|---|
+| `type` | all | Drop category; determines the action class. Default: `item` |
+| `ID` | item, entity, block, structure | Target identifier (legacy or modern; remapped via `LegacyEntityIdFixer`) |
+| `Count` | item | Stack size (integer ≥ 1) |
+| `NBTTag` | item, entity | Dict-value containing the target's NBT compound |
+| `posOffset` | entity, block | Relative position offset from drop origin: dict `(x=N,y=N,z=N)` |
+| `spreading` | entity | Whether the spawned entity is launched outward (`true`/`false`) |
+| `amount` | item | Synonym for `Count` in some addon packs |
+| `command` | command | Command string executed via `LegacyCommandRunner` |
+| `effectId` | effect | Status effect identifier (legacy name or modern `namespace:path`) |
+| `duration` | effect | Effect duration in ticks |
+| `amplifier` | effect | Effect amplifier (0-based integer) |
+| `soundId` | sound | Sound event identifier (legacy or modern) |
+| `message` | message | Chat message text (only sent if `dropChatEnabled=true`) |
+| `luck` | any | Inline luck modifier (alias for `@luck` in some addon formats) |
+
+Unrecognised attribute keys are not hard errors. The parser emits:
+
+```
+[WARN] [LootPP-Legacy] LuckyIgnoredField key '<fieldName>' not recognized for type='<type>' @ <packId>:<innerPath>:<lineNumber>
+```
+
+#### §9.4 Examples
+
+**Regular drop — item:**
+```
+ID=diamond,Count=3@luck=2@chance=0.8
+```
+Drops 3 diamonds; luck weight 2; 80% chance gate.
+
+**Regular drop — entity with NBT:**
+```
+type=entity,ID=Zombie,NBTTag=(CustomName="Lucky Zombie",CustomNameVisible=1)@luck=1
+```
+
+**Group — all entries execute together:**
+```
+group(ID=iron_sword;ID=iron_pickaxe;ID=iron_axe)@luck=0
+```
+All three items drop when this entry is selected.
+
+**Group with count — pick N at random:**
+```
+group:#rand(2,3):(ID=diamond_sword;ID=diamond_pickaxe;ID=diamond_axe;ID=diamond_hoe)@luck=2
+```
+Selects 2 or 3 of the four items at random.
+
+---
+
+### §10 Lucky Block Addon — Drop File Variants and Fallback Chain
+
+**Source class:** `lucky/loader/LuckyAddonLoader.java`
+
+Lucky Block addon packs may include up to four drop file variants. Each is parsed separately at bootstrap Phase 4:
+
+| File | Trigger | Fallback |
+|---|---|---|
+| `drops.txt` | Lucky Block break | (none) |
+| `bow_drops.txt` | Lucky Bow shot | (none) |
+| `sword_drops.txt` | Lucky Sword hit | Falls back to `bow_drops.txt` if empty |
+| `potion_drops.txt` | Lucky Potion throw | Falls back to `bow_drops.txt` if empty |
+
+Fallback is applied at the accessor level (`getMergedSwordDropLines()`, `getMergedPotionDropLines()`): if the specialized list is empty after loading, the accessor returns the bow drops list instead. This matches the original Lucky Block 1.8.9 addon convention.
+
+All four file types share the same §9 grammar. Multiple addon packs' drop lists are **merged**: entries from all loaded packs are concatenated into a single flat list for each drop category.
+
+---
+
+### §11 Lucky Block Addon — `properties.txt`
+
+**Source class:** `lucky/loader/LuckyAddonProperties.java`
+
+One `key=value` pair per line. Lines beginning with `/` or `#` are comments; blank lines are ignored.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `spawnRate` | integer | `200` | Natural world-gen frequency — higher = rarer (approximately 1 per N chunks) |
+| `structureChance` | integer | `2` | Probability denominator for structure-type drop selection |
+| `doDropsOnCreativeMode` | boolean | `false` | Whether block break in Creative mode triggers drops |
+
+When `properties.txt` is absent from a pack, `LuckyAddonProperties.DEFAULT` is used (all fields at their defaults).
+
+**Example:**
+```
+/ Lucky Block Water Addon properties
+spawnRate=150
+structureChance=3
+doDropsOnCreativeMode=false
+```
+
+---
+
+### §12 Lucky Block Addon — `natural_gen.txt`
+
+**Source class:** `lucky/loader/LuckyNaturalGenEntry.java`
+
+Defines how and where Lucky Blocks generate naturally in the world. Uses dimension section headers followed by entries in drop-line format.
+
+#### §12.1 Section Headers
+
+| Header | Dimension |
+|---|---|
+| `>surface` | Overworld surface |
+| `>underground` | Overworld underground (caves) |
+| `>nether` | The Nether |
+| `>end` | The End |
+
+Lines beginning with `>` start a new dimension section. Before any header appears, the default section is `surface`.
+
+#### §12.2 Entry Format
+
+```
+type=block,ID=<blockId>[,tileEntity=(Luck=<N>)]@chance=<rarity>
+```
+
+- `@chance=N` here is a **rarity denominator** (approximately 1 in N chunks), NOT a 0–1 probability gate.
+- Default rarity when `@chance` is absent: `200`.
+- `tileEntity=(Luck=N)` sets the initial luck value of the placed block.
+- Only `type=block` entries are registered as world-gen features; group-type and structure-type entries emit a log line and are skipped.
+- Lines starting with `/` are comments (or structure-file references) and are ignored.
+- The feature is only registered when `naturalGenEnabled=true` in config.
+
+#### §12.3 Example
+
+```
+>surface
+type=block,ID=lucky:lucky_block,tileEntity=(Luck=0)@chance=200
+
+>underground
+type=block,ID=lucky:lucky_block,tileEntity=(Luck=-1)@chance=300
+
+>nether
+type=block,ID=lucky:lucky_block_nether,tileEntity=(Luck=-2)@chance=400
+```
+
+---
+
+### §13 Lucky Block Addon — Template Variable Expansion
+
+**Source class:** `lucky/template/LuckyTemplateVars.java`
+
+Template variables appear inside attribute string values and are expanded at **drop evaluation time** (when the block is broken), not at parse time. Syntax: `#varName` or `#varName(arg,arg)`.
+
+#### §13.1 Variable Reference
+
+| Variable | Example | Result |
+|---|---|---|
+| `#rand(min,max)` | `#rand(1,5)` | Random integer in [min, max] inclusive |
+| `#randFloat(min,max)` | `#randFloat(0.5,2.0)` | Random float in [min, max] |
+| `#randList(a,b,c)` | `#randList(1,5,10)` | One randomly chosen value from the comma-separated list |
+| `#randBool` | `#randBool` | Randomly `0` or `1` |
+| `#randPosNeg(min,max)` | `#randPosNeg(1,5)` | Random integer with randomly positive or negative sign |
+| `#circleOffset(r)` | `#circleOffset(3)` | Random XYZ offset on a circle of radius r |
+| `#randLaunchMotion` | `#randLaunchMotion` | Random motion vector suitable for launched projectiles |
+| `#bowMotion(speed)` | `#bowMotion(1.5)` | Motion matching a Lucky Bow trajectory at the given speed |
+| `#motionFromDirection(h,v,speed)` | `#motionFromDirection(90,30,2.0)` | Motion from horizontal angle (degrees) + vertical angle (degrees) + speed |
+| `#posX`, `#posY`, `#posZ` | `#posX` | World coordinates of the broken Lucky Block |
+| `#pName` | `#pName` | Name of the player who broke the block |
+| `#pX`, `#pY`, `#pZ` | `#pX` | Player's current world position coordinates |
+| `#pUUID` | `#pUUID` | Player's UUID string |
+
+Unknown `#token` patterns are left unchanged in the output to preserve compatibility with addon-specific template extensions.
+
+After all template variables are expanded, simple arithmetic expressions (`N + M`, `N - M`) in integer or float positions are evaluated.
+
+---
+
 ## 中文版本（Chinese Version）
 
 ### §0 全局文件读取规则
@@ -871,3 +1091,223 @@ line := block_name "_____" block_meta "_____" block_nbt
 | 方块：generic (blocks)、plants、crops、cakes | 已实现 |
 | 物品：bows / guns / multitools — 完整投射物/弹药行为 | **延迟实现** |
 | 方块：buttons、pressure_plates、slabs、stairs、panes、walls | **延迟实现** |
+
+---
+
+### §9 Lucky Block 附加包 — `drops.txt` 语法
+
+**源类：** `lucky/attr/LuckyAttrParser.java`、`lucky/drop/LuckyDropParser.java`、`lucky/drop/LuckyDropLine.java`
+
+Lucky Block 附加包的掉落文件（`drops.txt`、`bow_drops.txt`、`sword_drops.txt`、`potion_drops.txt`）采用 `key=value` 属性格式，与 `_____` 分隔的 Loot++ 配置格式完全不同。该格式由 `LuckyAttrParser` 和 `LuckyDropParser` 解析。
+
+#### §9.1 语法（EBNF）
+
+```ebnf
+drop-file     ::= (drop-line | comment | blank)*
+drop-line     ::= (regular-drop | group-drop) luck-suffix* chance-suffix?
+
+regular-drop  ::= attr-pair ("," attr-pair)*
+group-drop    ::= "group" count-spec? "(" group-entries ")"
+group-entries ::= drop-line (";" drop-line)*
+count-spec    ::= ":#" rand-expr ":"
+rand-expr     ::= "rand(" integer "," integer ")"
+               |  integer
+
+luck-suffix   ::= "@luck=" integer
+chance-suffix ::= "@chance=" float
+               |  "@chance"          (* 裸形式 — 规范化为 chance=1；WARN LuckyAttrBareChance *)
+
+attr-pair     ::= key "=" attr-value
+attr-value    ::= string-value
+               |  dict-value
+               |  list-value
+
+dict-value    ::= "(" attr-pair ("," attr-pair)* ")"
+list-value    ::= "[" attr-value (";" attr-value)* "]"
+string-value  ::= (* 不包含顶级 "," / ";" / "(" / ")" / "[" / "]" / "=" 的文本 *)
+
+comment       ::= "/" [^\n]*
+blank         ::= ""
+```
+
+解析器使用括号深度计数器来正确识别顶级分隔符 `,` 和 `;`。嵌套于 `(...)` 或 `[...]` 内的逗号不会拆分属性对。
+
+`@luck` 与 `@chance` 从行末以顶级 `@` 标记的形式扫描识别（括号外），并在解析属性对之前从字符串中剥离。
+
+#### §9.2 `@luck` 与 `@chance` 语义
+
+| 后缀 | 含义 |
+|---|---|
+| `@luck=N` | 有符号整数；作为 `LuckyDropRoller` 权重公式中的 `luckWeight` 使用 |
+| `@chance=P` | 浮点数 0.0–1.0；在幸运加权抽取选中该条目**之后**独立判断 |
+| `@chance`（裸形式） | 视为 `chance=1.0`，并输出 WARN `LuckyAttrBareChance` |
+
+`@chance` 概率门控与幸运抽取相互独立。含 `@chance=0.5` 的条目以其正常权重参与加权池的抽取，之后还有 50% 的独立概率实际执行。
+
+#### §9.3 已知属性键
+
+| 键 | 适用类型 | 含义 |
+|---|---|---|
+| `type` | 所有 | 掉落类别，决定处理该条目的动作类。默认：`item` |
+| `ID` | item、entity、block、structure | 目标标识符（遗留或现代；通过 `LegacyEntityIdFixer` 映射） |
+| `Count` | item | 堆叠数量（整数 ≥ 1） |
+| `NBTTag` | item、entity | 包含目标 NBT 复合标签的字典值 |
+| `posOffset` | entity、block | 相对于掉落原点的位置偏移：字典 `(x=N,y=N,z=N)` |
+| `spreading` | entity | 生成实体是否向外抛射（`true`/`false`） |
+| `amount` | item | 部分附加包中 `Count` 的同义词 |
+| `command` | command | 通过 `LegacyCommandRunner` 执行的命令字符串 |
+| `effectId` | effect | 状态效果标识符（遗留名称或现代 `namespace:path`） |
+| `duration` | effect | 效果持续时间（tick 数） |
+| `amplifier` | effect | 效果级别（从 0 起的整数） |
+| `soundId` | sound | 声音事件标识符（遗留或现代） |
+| `message` | message | 聊天消息文本（仅在 `dropChatEnabled=true` 时发送） |
+| `luck` | 任意 | 内联幸运修正值（部分格式中 `@luck` 后缀的同义词） |
+
+未识别的属性键不会触发硬性错误，解析器仅输出：
+
+```
+[WARN] [LootPP-Legacy] LuckyIgnoredField key '<fieldName>' not recognized for type='<type>' @ <packId>:<innerPath>:<lineNumber>
+```
+
+#### §9.4 示例
+
+**普通掉落 — 物品：**
+```
+ID=diamond,Count=3@luck=2@chance=0.8
+```
+掉落 3 颗钻石；幸运权重 2；80% 概率门控。
+
+**普通掉落 — 带 NBT 的实体：**
+```
+type=entity,ID=Zombie,NBTTag=(CustomName="Lucky Zombie",CustomNameVisible=1)@luck=1
+```
+
+**组（所有条目一同执行）：**
+```
+group(ID=iron_sword;ID=iron_pickaxe;ID=iron_axe)@luck=0
+```
+该条目被选中时，三把物品同时掉落。
+
+**带数量的组（随机选择 N 个）：**
+```
+group:#rand(2,3):(ID=diamond_sword;ID=diamond_pickaxe;ID=diamond_axe;ID=diamond_hoe)@luck=2
+```
+从四件物品中随机选取 2 或 3 件。
+
+---
+
+### §10 Lucky Block 附加包 — 掉落文件类型与回退链
+
+**源类：** `lucky/loader/LuckyAddonLoader.java`
+
+Lucky Block 附加包最多可包含四种掉落文件类型，均在启动阶段 4 单独解析：
+
+| 文件 | 触发场景 | 回退 |
+|---|---|---|
+| `drops.txt` | 破坏 Lucky 方块 | （无） |
+| `bow_drops.txt` | 射出 Lucky 弓 | （无） |
+| `sword_drops.txt` | Lucky 剑击中 | 为空时回退至 `bow_drops.txt` |
+| `potion_drops.txt` | 投掷 Lucky 药水 | 为空时回退至 `bow_drops.txt` |
+
+回退在访问器层面（`getMergedSwordDropLines()`、`getMergedPotionDropLines()`）应用：若特化列表在加载后为空，访问器则返回弓的掉落列表。这与原版 Lucky Block 1.8.9 附加包约定相符。
+
+全部四类文件共享 §9 中的相同语法规则。多个附加包的掉落列表会被**合并**：所有已加载包的条目按每种掉落类别拼接为一个扁平列表。
+
+---
+
+### §11 Lucky Block 附加包 — `properties.txt`
+
+**源类：** `lucky/loader/LuckyAddonProperties.java`
+
+每行一个 `key=value` 键值对。以 `/` 或 `#` 开头的行为注释；空行忽略。
+
+| 键 | 类型 | 默认值 | 含义 |
+|---|---|---|---|
+| `spawnRate` | 整数 | `200` | 自然世界生成频率——数值越大越稀有（每 N 个区块约生成 1 次） |
+| `structureChance` | 整数 | `2` | 结构类型掉落选择的概率分母 |
+| `doDropsOnCreativeMode` | 布尔 | `false` | 在创造模式下破坏方块是否触发掉落 |
+
+若附加包中不存在 `properties.txt`，则使用 `LuckyAddonProperties.DEFAULT`（所有字段取默认值）。
+
+**示例：**
+```
+/ Lucky Block Water Addon 属性
+spawnRate=150
+structureChance=3
+doDropsOnCreativeMode=false
+```
+
+---
+
+### §12 Lucky Block 附加包 — `natural_gen.txt`
+
+**源类：** `lucky/loader/LuckyNaturalGenEntry.java`
+
+定义 Lucky 方块在世界中自然生成的位置和方式。采用维度分节标题，后跟掉落行格式的条目。
+
+#### §12.1 分节标题
+
+| 标题 | 维度 |
+|---|---|
+| `>surface` | 主世界地表 |
+| `>underground` | 主世界地下（洞穴） |
+| `>nether` | 下界 |
+| `>end` | 末地 |
+
+以 `>` 开头的行开始一个新的维度分节。在任何标题出现之前，默认分节为 `surface`。
+
+#### §12.2 条目格式
+
+```
+type=block,ID=<blockId>[,tileEntity=(Luck=<N>)]@chance=<rarity>
+```
+
+- 此处的 `@chance=N` 是**稀有度分母**（大约每 N 个区块生成 1 次），而**非** 0–1 的概率门控。
+- 未设置 `@chance` 时默认稀有度为 `200`。
+- `tileEntity=(Luck=N)` 设置生成方块的初始幸运值。
+- 只有 `type=block` 条目被注册为世界生成特性；组类型和结构类型条目记录日志后跳过。
+- 以 `/` 开头的行为注释（或结构文件引用），一律忽略。
+- 该特性仅在配置项 `naturalGenEnabled=true` 时注册。
+
+#### §12.3 示例
+
+```
+>surface
+type=block,ID=lucky:lucky_block,tileEntity=(Luck=0)@chance=200
+
+>underground
+type=block,ID=lucky:lucky_block,tileEntity=(Luck=-1)@chance=300
+
+>nether
+type=block,ID=lucky:lucky_block_nether,tileEntity=(Luck=-2)@chance=400
+```
+
+---
+
+### §13 Lucky Block 附加包 — 模板变量展开
+
+**源类：** `lucky/template/LuckyTemplateVars.java`
+
+模板变量出现在属性字符串值内，在**掉落求值时**（即方块被破坏时）展开，而非解析时。语法为 `#varName` 或 `#varName(arg,arg)`。
+
+#### §13.1 变量参考
+
+| 变量 | 示例 | 结果 |
+|---|---|---|
+| `#rand(min,max)` | `#rand(1,5)` | [min, max] 范围内的随机整数（含边界） |
+| `#randFloat(min,max)` | `#randFloat(0.5,2.0)` | [min, max] 范围内的随机浮点数 |
+| `#randList(a,b,c)` | `#randList(1,5,10)` | 从逗号分隔列表中随机选取一个值 |
+| `#randBool` | `#randBool` | 随机为 `0` 或 `1` |
+| `#randPosNeg(min,max)` | `#randPosNeg(1,5)` | 符号随机（正或负）的随机整数 |
+| `#circleOffset(r)` | `#circleOffset(3)` | 半径为 r 的圆上的随机 XYZ 偏移量 |
+| `#randLaunchMotion` | `#randLaunchMotion` | 适用于弹射体的随机运动向量 |
+| `#bowMotion(speed)` | `#bowMotion(1.5)` | 以给定速度匹配 Lucky 弓轨迹的运动向量 |
+| `#motionFromDirection(h,v,speed)` | `#motionFromDirection(90,30,2.0)` | 由水平角（度）+ 垂直角（度）+ 速度计算的运动向量 |
+| `#posX`、`#posY`、`#posZ` | `#posX` | 被破坏 Lucky 方块的世界坐标 |
+| `#pName` | `#pName` | 破坏方块的玩家名称 |
+| `#pX`、`#pY`、`#pZ` | `#pX` | 玩家的当前世界坐标 |
+| `#pUUID` | `#pUUID` | 玩家的 UUID 字符串 |
+
+未知的 `#token` 模式在输出中保持不变，以兼容附加包特有的模板扩展。
+
+所有模板变量展开完成后，整数或浮点数位置的简单算术表达式（`N + M`、`N - M`）将被求值。

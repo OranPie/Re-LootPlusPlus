@@ -360,6 +360,72 @@ The `successCount` returned by each command type is defined below. These definit
 
 ---
 
+## §8 Lucky Drop Engine Pipeline
+
+**Source classes:** `lucky/drop/LuckyDropRoller.java`, `lucky/drop/LuckyDropEvaluator.java`, `lucky/drop/LuckyDropEngine.java`
+
+This section documents the full evaluation pipeline that runs when a Lucky Block is broken (or a Lucky Bow is fired, etc.). The pipeline has three sequential stages: **weighted roll → chance gate → dispatch**.
+
+### §8.1 Weighted Roll — `LuckyDropRoller`
+
+The roller builds a weighted pool from all drop lines parsed for the relevant file (e.g. `drops.txt`), then selects one entry using a weighted random draw modified by the player's current luck level.
+
+**Weight formula:**
+
+```
+effectiveWeight = max(0, baseWeight + luckWeight * luckModifier + luck * luckModifier)
+```
+
+Where:
+- `baseWeight` — the integer weight declared on the drop line (default `1` if omitted)
+- `luckWeight` — the signed integer `@luck=N` suffix on that drop line (default `0`)
+- `luck` — the player's current effective luck (from potion effects; 0 if none)
+- `luckModifier` — global multiplier from `config.luckModifier` (default `0.1`)
+
+Entries whose `effectiveWeight` would be ≤ 0 after the formula are **excluded from the pool entirely** for that roll. The random selection is a weighted draw over the surviving pool.
+
+**Clamping rules:**
+- `luckModifier` values < 0 are clamped to 0 (no negative modifiers).
+- `tickIntervalTicks` values < 1 are clamped to 1 (minimum one-tick interval).
+
+### §8.2 Chance Gate
+
+After the weighted roll selects an entry, the `@chance=P` suffix (if present) is evaluated:
+
+- `P` is a float in `[0.0, 1.0]`.
+- A uniform random float in `[0, 1)` is drawn; if `rand >= P`, the entry is **discarded** and no drop occurs for this activation.
+- The chance gate is completely independent from the luck/weight system.
+- A bare `@chance` (no value) is normalized to `P = 1.0` with a `WARN LuckyAttrBareChance`.
+
+### §8.3 Dispatch
+
+Once an entry passes the chance gate, `LuckyDropEngine` dispatches it by `type`:
+
+| `type` value | Handler | Action |
+|---|---|---|
+| `item` (default) | `LuckyItemAction` | Spawns item entity at drop position |
+| `entity` | `LuckyEntityAction` | Summons entity via `LegacyEntityIdFixer` + NBT; applies `posOffset` |
+| `block` | `LuckyBlockAction` | Places block at `posOffset` from origin |
+| `structure` | `LuckyStructureAction` | Loads NBT structure file from addon zip |
+| `command` | `LuckyCommandAction` | Delegates to `LegacyCommandRunner`; WARN on failure |
+| `effect` | `LuckyEffectAction` | Applies potion effect to drop recipient |
+| `sound` | `LuckySoundAction` | Plays sound event at drop position |
+| `message` | `LuckyMessageAction` | Sends chat message (only if `dropChatEnabled=true`) |
+
+Unknown `type` values produce `WARN [LootPP-Legacy] LuckyDropUnknownType` and are skipped.
+
+### §8.4 Group Drops
+
+When the weighted roll selects a `group(...)` entry, the dispatch stage executes **all** entries in the group — the individual entries within a group are not re-rolled. The group's `@luck` and `@chance` apply to the group as a whole; individual entries within the group do not have their own luck/chance gates.
+
+If the group has a count specifier (`group:#rand(2,3):`), that many entries are randomly selected from the group before dispatch.
+
+### §8.5 `simulateCounts` (Debug Only)
+
+`LuckyDropRoller.simulateCounts(n, luck)` runs `n` weighted rolls with the given luck value and returns a `Map<dropLineIndex, hitCount>`. This is used by the `/lppdrop eval_counts <N>` command to produce drop-rate histograms without executing any actual drops.
+
+---
+
 *End of REFERENCE.md (English section)*
 
 ---
@@ -723,6 +789,72 @@ lootplusplus:command_trigger_block_____0_____{CommandList:["playsound @a mob.wit
 
 **`lppcondition` 评估规则：**  
 `lppcondition <条件命令> _if_true_ <then 命令>` 评估 `<条件命令>`。若 `successCount > 0`，则评估 `<then 命令>` 并返回其 `successCount`。若 `successCount == 0`，则停止并返回 0。可选的 `_if_false_ <else 命令>` 分支在 `successCount == 0` 时执行，并返回 else 命令的 `successCount`。
+
+---
+
+## §8 Lucky 掉落引擎管线
+
+**源类：** `lucky/drop/LuckyDropRoller.java`、`lucky/drop/LuckyDropEvaluator.java`、`lucky/drop/LuckyDropEngine.java`
+
+本节记录当 Lucky 方块被破坏（或 Lucky 弓被射出等）时运行的完整求值管线。该管线分为三个顺序阶段：**加权抽取 → 概率门控 → 分发执行**。
+
+### §8.1 加权抽取 — `LuckyDropRoller`
+
+抽取器从相关掉落文件（如 `drops.txt`）中解析的所有掉落条目构建一个加权池，然后使用受玩家当前幸运等级影响的加权随机抽取从中选出一个条目。
+
+**权重公式：**
+
+```
+effectiveWeight = max(0, baseWeight + luckWeight * luckModifier + luck * luckModifier)
+```
+
+其中：
+- `baseWeight` — 掉落行上声明的整数权重（缺省为 `1`）
+- `luckWeight` — 该掉落行上 `@luck=N` 后缀中的有符号整数（缺省为 `0`）
+- `luck` — 玩家当前有效幸运值（来自药水效果；无效果时为 0）
+- `luckModifier` — 来自 `config.luckModifier` 的全局乘数（默认 `0.1`）
+
+公式计算后 `effectiveWeight ≤ 0` 的条目将从该次抽取的池中**完全排除**。随机选取在剩余的存活池中进行加权随机抽取。
+
+**截断规则：**
+- `luckModifier` 值 < 0 时截断为 0（不允许负乘数）。
+- `tickIntervalTicks` 值 < 1 时截断为 1（最小一 tick 间隔）。
+
+### §8.2 概率门控
+
+加权抽取选出条目后，评估 `@chance=P` 后缀（若存在）：
+
+- `P` 为 `[0.0, 1.0]` 范围内的浮点数。
+- 在 `[0, 1)` 内抽取一个均匀随机浮点数；若 `rand >= P`，该条目被**丢弃**，本次触发不产生掉落。
+- 概率门控与幸运/权重系统完全独立。
+- 裸形式 `@chance`（无值）规范化为 `P = 1.0`，同时输出 `WARN LuckyAttrBareChance`。
+
+### §8.3 分发执行
+
+条目通过概率门控后，`LuckyDropEngine` 按 `type` 分发处理：
+
+| `type` 值 | 处理器 | 动作 |
+|---|---|---|
+| `item`（默认）| `LuckyItemAction` | 在掉落原点生成物品实体 |
+| `entity` | `LuckyEntityAction` | 通过 `LegacyEntityIdFixer` + NBT 召唤实体；应用 `posOffset` |
+| `block` | `LuckyBlockAction` | 在原点的 `posOffset` 处放置方块 |
+| `structure` | `LuckyStructureAction` | 从附加包 zip 中加载 NBT 结构文件 |
+| `command` | `LuckyCommandAction` | 委托给 `LegacyCommandRunner`；失败时 WARN |
+| `effect` | `LuckyEffectAction` | 对掉落接受者施加药水效果 |
+| `sound` | `LuckySoundAction` | 在掉落位置播放音效事件 |
+| `message` | `LuckyMessageAction` | 发送聊天消息（仅在 `dropChatEnabled=true` 时生效）|
+
+未知的 `type` 值产生 `WARN [LootPP-Legacy] LuckyDropUnknownType` 并跳过。
+
+### §8.4 组掉落
+
+加权抽取选中 `group(...)` 条目时，分发阶段会执行组内的**全部**条目——组内各条目不会再次独立抽取。组的 `@luck` 和 `@chance` 作用于整个组；组内条目没有各自的幸运/概率门控。
+
+若组带有数量修饰符（`group:#rand(2,3):`），分发前会从组内随机选取该数量的条目。
+
+### §8.5 `simulateCounts`（仅调试）
+
+`LuckyDropRoller.simulateCounts(n, luck)` 以给定幸运值执行 `n` 次加权抽取，并返回 `Map<掉落行索引, 命中次数>`。该方法由 `/lppdrop eval_counts <N>` 命令调用，以生成不实际执行掉落的掉落率直方图。
 
 ---
 
