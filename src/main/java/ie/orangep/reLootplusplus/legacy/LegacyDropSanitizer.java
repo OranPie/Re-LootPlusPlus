@@ -1480,6 +1480,7 @@ public final class LegacyDropSanitizer {
         boolean changed = false;
         boolean inSingle = false;
         boolean inDouble = false;
+        int depth = 0;
         int i = 0;
         while (i < input.length()) {
             char c = input.charAt(i);
@@ -1489,7 +1490,14 @@ public final class LegacyDropSanitizer {
                 inDouble = !inDouble;
             }
             if (!inSingle && !inDouble) {
-                if (c == ')' && i + 1 < input.length() && input.charAt(i + 1) == ',') {
+                int depthAfter = depth;
+                if (c == '(' || c == '[') {
+                    depth++;
+                } else if (c == ')' || c == ']') {
+                    depthAfter = Math.max(0, depth - 1);
+                    depth = depthAfter;
+                }
+                if (c == ')' && depthAfter == 1 && i + 1 < input.length() && input.charAt(i + 1) == ',') {
                     int j = i + 2;
                     while (j < input.length() && Character.isWhitespace(input.charAt(j))) {
                         j++;
@@ -1502,7 +1510,7 @@ public final class LegacyDropSanitizer {
                         continue;
                     }
                 }
-                if (c == ',') {
+                if (c == ',' && depth == 1) {
                     int j = i + 1;
                     while (j < input.length() && Character.isWhitespace(input.charAt(j))) {
                         j++;
@@ -1571,6 +1579,7 @@ public final class LegacyDropSanitizer {
         boolean inSingle = false;
         boolean inDouble = false;
         boolean pendingClose = false;
+        int depth = 0;
         int i = 0;
         while (i < input.length()) {
             char c = input.charAt(i);
@@ -1580,13 +1589,17 @@ public final class LegacyDropSanitizer {
                 inDouble = !inDouble;
             }
             if (!inSingle && !inDouble) {
-                if (c == ')') {
-                    pendingClose = true;
+                if (c == '(' || c == '[') {
+                    depth++;
+                    pendingClose = false;
+                } else if (c == ')' || c == ']') {
+                    depth = Math.max(0, depth - 1);
+                    pendingClose = c == ')' && depth == 1;
                 } else if (c == ';') {
                     pendingClose = false;
                 } else if (c == ',') {
                     pendingClose = false;
-                } else if (pendingClose && startsWithDropToken(input, i)) {
+                } else if (pendingClose && depth == 1 && startsWithDropToken(input, i)) {
                     out.append(';');
                     changed = true;
                     warnOnce(reporter, "LegacyGroupSeparator", "inserted missing ';' between drops");

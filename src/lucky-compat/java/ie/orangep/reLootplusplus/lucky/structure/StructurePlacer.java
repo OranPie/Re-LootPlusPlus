@@ -9,6 +9,7 @@ import net.minecraft.state.property.Property;
 import net.minecraft.util.BlockRotation;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.registry.Registry;
 
 import java.util.ArrayList;
@@ -111,6 +112,16 @@ public final class StructurePlacer {
         for (PlacementEntry e : pass2) {
             placeEntry(e, world, rotation, Block.NOTIFY_ALL | Block.FORCE_STATE);
         }
+
+        // Legacy schematics store panes/fences as bare block IDs. In modern versions their
+        // north/east/south/west connection state is explicit, so recalculate after the full
+        // footprint exists; otherwise traps place with disconnected iron bars/fences.
+        for (PlacementEntry e : pass1) {
+            refreshHorizontalConnections(e.pos(), world);
+        }
+        for (PlacementEntry e : pass2) {
+            refreshHorizontalConnections(e.pos(), world);
+        }
     }
 
     private static void placeEntry(PlacementEntry e, ServerWorld world, BlockRotation rotation, int flags) {
@@ -183,6 +194,41 @@ public final class StructurePlacer {
             }
         }
         return facing;
+    }
+
+    private static void refreshHorizontalConnections(BlockPos pos, ServerWorld world) {
+        BlockState state = world.getBlockState(pos);
+        if (!hasHorizontalConnectionProperties(state)) {
+            return;
+        }
+        BlockState updated = state;
+        for (Direction dir : Direction.Type.HORIZONTAL) {
+            BlockPos neighborPos = pos.offset(dir);
+            updated = updated.getStateForNeighborUpdate(
+                dir,
+                world.getBlockState(neighborPos),
+                world,
+                pos,
+                neighborPos
+            );
+        }
+        if (updated != state) {
+            world.setBlockState(pos, updated, Block.NOTIFY_ALL | Block.FORCE_STATE);
+        }
+    }
+
+    private static boolean hasHorizontalConnectionProperties(BlockState state) {
+        boolean north = false, east = false, south = false, west = false;
+        for (Property<?> prop : state.getBlock().getStateManager().getProperties()) {
+            switch (prop.getName()) {
+                case "north" -> north = true;
+                case "east" -> east = true;
+                case "south" -> south = true;
+                case "west" -> west = true;
+                default -> { }
+            }
+        }
+        return north && east && south && west;
     }
 
     private record PlacementEntry(StructureBlock sb, BlockPos pos, Identifier id) {}

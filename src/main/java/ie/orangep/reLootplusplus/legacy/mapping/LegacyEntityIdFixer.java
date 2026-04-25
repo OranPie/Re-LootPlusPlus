@@ -54,7 +54,7 @@ public final class LegacyEntityIdFixer {
         register("lootplusplus:thrown_item", "lootplusplus:thrown_item");
         // Legacy re-lootplusplus namespace (old saves / old addon references)
         register("re-lootplusplus:loot_thrown", "lootplusplus:thrown_item");
-        register("potioncore.CustomPotion", "potioncore:custom_potion");
+        register("potioncore.CustomPotion", "minecraft:potion");
         register("LuckyProjectile", "lucky:lucky_projectile");
         register("luckyprojectile", "lucky:lucky_projectile");
         register("lucky.LuckyProjectile", "lucky:lucky_projectile");
@@ -98,6 +98,9 @@ public final class LegacyEntityIdFixer {
         fixEntityRiding(nbt, reporter, context);
         if ("minecraft:falling_block".equals(mapped)) {
             fixFallingBlockNbt(nbt, reporter, context);
+        }
+        if ("minecraft:potion".equals(mapped)) {
+            fixThrownPotionNbt(nbt, reporter, context);
         }
         if ("minecraft:item".equals(mapped)) {
             fixItemEntityStack(nbt, reporter, context);
@@ -216,9 +219,53 @@ public final class LegacyEntityIdFixer {
         }
     }
 
+    /**
+     * Legacy ThrownPotion / potioncore.CustomPotion entities store their item stack in
+     * a {@code Potion} compound. 1.18 thrown potion entities expect an {@code Item}
+     * stack, and custom PotionCore potion entities are best represented as vanilla
+     * splash potions carrying CustomPotionEffects.
+     */
+    private static void fixThrownPotionNbt(NbtCompound nbt, LegacyWarnReporter reporter, String context) {
+        NbtCompound item = null;
+        if (nbt.contains("Potion", NbtElement.COMPOUND_TYPE)) {
+            item = nbt.getCompound("Potion").copy();
+            nbt.put("Item", item);
+            nbt.remove("Potion");
+            warn(reporter, "LegacyPotionEntity", "converted Potion stack -> Item stack" + formatContext(context));
+        } else if (nbt.contains("Item", NbtElement.COMPOUND_TYPE)) {
+            item = nbt.getCompound("Item");
+        }
+        if (item == null) {
+            item = new NbtCompound();
+            nbt.put("Item", item);
+        }
+
+        String rawItemId = item.getString("id");
+        if (rawItemId == null || rawItemId.isBlank()
+                || "373".equals(rawItemId)
+                || "minecraft:373".equals(rawItemId)
+                || "potioncore:custom_potion".equalsIgnoreCase(rawItemId)
+                || "lootplusplus:custom_potion".equalsIgnoreCase(rawItemId)) {
+            item.putString("id", "minecraft:splash_potion");
+            warn(reporter, "LegacyPotionEntity",
+                "mapped thrown potion item '" + rawItemId + "' -> minecraft:splash_potion" + formatContext(context));
+        }
+        if (!item.contains("Count", NbtElement.NUMBER_TYPE)) {
+            item.putByte("Count", (byte) 1);
+        }
+        fixItemStack(item, reporter, context);
+    }
+
     private static String mapLegacyItemId(String id, NbtCompound item, LegacyWarnReporter reporter, String context) {
         if (id == null) {
             return null;
+        }
+        if ("minecraft:373".equals(id)
+                || "potioncore:custom_potion".equalsIgnoreCase(id)
+                || "lootplusplus:custom_potion".equalsIgnoreCase(id)) {
+            String mapped = "minecraft:potion";
+            warn(reporter, "LegacyItemId", "mapped legacy potion item " + id + " -> " + mapped + formatContext(context));
+            return mapped;
         }
         if ("minecraft:banner".equals(id)) {
             int meta = item.contains("Damage", NbtElement.NUMBER_TYPE) ? item.getInt("Damage") : 15;
@@ -582,6 +629,12 @@ public final class LegacyEntityIdFixer {
         }
         String namespace = parsed.getNamespace();
         String path = parsed.getPath();
+        if (("potioncore".equalsIgnoreCase(namespace) || "lootplusplus".equalsIgnoreCase(namespace))
+                && "custom_potion".equals(path)) {
+            String mapped = "minecraft:potion";
+            warn(reporter, "LegacyItemId", "mapped legacy potion item " + id + " -> " + mapped + formatContext(context));
+            return mapped;
+        }
         if ("lucky".equalsIgnoreCase(namespace) && path.startsWith("lucky_block_")) {
             Identifier baseLuckyBlock = new Identifier("lucky", "lucky_block");
             if (Registry.ITEM.containsId(baseLuckyBlock)) {
@@ -599,6 +652,7 @@ public final class LegacyEntityIdFixer {
             return mapped;
         }
         String mappedPath = switch (path) {
+            case "373" -> "potion";
             case "noteblock" -> "note_block";
             case "wooden_pressure_plate" -> "oak_pressure_plate";
             case "wooden_button" -> "oak_button";

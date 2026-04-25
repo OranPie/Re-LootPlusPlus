@@ -2,6 +2,7 @@ package ie.orangep.reLootplusplus.lucky.drop.action;
 
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.mapping.LegacyEntityIdFixer;
+import ie.orangep.reLootplusplus.legacy.mapping.LegacyItemNbtFixer;
 import ie.orangep.reLootplusplus.lucky.attr.LuckyAttr;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropContext;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
@@ -56,6 +57,7 @@ public final class LuckyItemDropAction {
         if (nbtFromDrop != null && !nbtFromDrop.isEmpty()) {
             NbtCompound existing = stack.getOrCreateNbt();
             for (String key : nbtFromDrop.getKeys()) existing.put(key, nbtFromDrop.get(key));
+            LegacyItemNbtFixer.fixItemStack(existing, ctx.warnReporter(), ctx.sourceLoc().toString());
             stack.setNbt(existing);
         }
 

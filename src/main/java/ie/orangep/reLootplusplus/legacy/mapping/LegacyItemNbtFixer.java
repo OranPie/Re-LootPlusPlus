@@ -10,6 +10,7 @@ import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.registry.Registry;
 
 import java.util.Locale;
 
@@ -29,6 +30,7 @@ public final class LegacyItemNbtFixer {
         fixDisplay(tag, reporter, context);
         fixEnchantments(tag, reporter, context);
         fixAttributeModifiers(tag, reporter, context);
+        fixCustomPotionEffects(tag, reporter, context);
     }
 
     public static String normalizeAttributeId(String raw, LegacyWarnReporter reporter, String context) {
@@ -158,7 +160,7 @@ public final class LegacyItemNbtFixer {
             if (id == null || id.isEmpty()) {
                 continue;
             }
-            String mapped = LegacyEnchantmentIdMapper.resolve(id, reporter, null);
+            String mapped = resolveEnchantmentId(id, reporter, context);
             if (mapped == null || mapped.isEmpty()) {
                 continue;
             }
@@ -178,6 +180,70 @@ public final class LegacyItemNbtFixer {
             modern.add(out);
         }
         return modern;
+    }
+
+    private static String resolveEnchantmentId(String id, LegacyWarnReporter reporter, String context) {
+        try {
+            return LegacyEnchantmentIdMapper.resolve(id, reporter, null);
+        } catch (NoClassDefFoundError e) {
+            String mapped = fallbackEnchantmentId(id);
+            if (mapped == null) {
+                warn(reporter, "LegacyEnchant", "unknown numeric id " + id + formatContext(context));
+                return null;
+            }
+            warn(reporter, "LegacyEnchant",
+                "numeric id " + id + " -> " + mapped + " (inline fallback)" + formatContext(context));
+            return mapped;
+        }
+    }
+
+    private static String fallbackEnchantmentId(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String trimmed = raw.trim();
+        if (!isNumeric(trimmed)) {
+            return trimmed.contains(":") ? trimmed.toLowerCase(Locale.ROOT) : "minecraft:" + trimmed.toLowerCase(Locale.ROOT);
+        }
+        return switch (Integer.parseInt(trimmed)) {
+            case 0 -> "minecraft:protection";
+            case 1 -> "minecraft:fire_protection";
+            case 2 -> "minecraft:feather_falling";
+            case 3 -> "minecraft:blast_protection";
+            case 4 -> "minecraft:projectile_protection";
+            case 5 -> "minecraft:respiration";
+            case 6 -> "minecraft:aqua_affinity";
+            case 7 -> "minecraft:thorns";
+            case 8 -> "minecraft:depth_strider";
+            case 9 -> "minecraft:frost_walker";
+            case 10 -> "minecraft:binding_curse";
+            case 16 -> "minecraft:sharpness";
+            case 17 -> "minecraft:smite";
+            case 18 -> "minecraft:bane_of_arthropods";
+            case 19 -> "minecraft:knockback";
+            case 20 -> "minecraft:fire_aspect";
+            case 21 -> "minecraft:looting";
+            case 32 -> "minecraft:efficiency";
+            case 33 -> "minecraft:silk_touch";
+            case 34 -> "minecraft:unbreaking";
+            case 35 -> "minecraft:fortune";
+            case 48 -> "minecraft:power";
+            case 49 -> "minecraft:punch";
+            case 50 -> "minecraft:flame";
+            case 51 -> "minecraft:infinity";
+            case 61 -> "minecraft:luck_of_the_sea";
+            case 62 -> "minecraft:lure";
+            case 70 -> "minecraft:mending";
+            case 71 -> "minecraft:vanishing_curse";
+            default -> null;
+        };
+    }
+
+    private static boolean isNumeric(String raw) {
+        if (raw == null || raw.isEmpty()) return false;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c < '0' || c > '9') return false;
+        }
+        return true;
     }
 
     private static void fixAttributeModifiers(NbtCompound tag, LegacyWarnReporter reporter, String context) {
@@ -231,6 +297,37 @@ public final class LegacyItemNbtFixer {
             } else {
                 tag.put("AttributeModifiers", fixed);
             }
+        }
+    }
+
+    private static void fixCustomPotionEffects(NbtCompound tag, LegacyWarnReporter reporter, String context) {
+        if (tag == null || !tag.contains("CustomPotionEffects", NbtElement.LIST_TYPE)) {
+            return;
+        }
+        NbtList effects = tag.getList("CustomPotionEffects", NbtElement.COMPOUND_TYPE);
+        int converted = 0;
+        for (int i = 0; i < effects.size(); i++) {
+            NbtCompound effect = effects.getCompound(i);
+            if (!effect.contains("Id", NbtElement.STRING_TYPE)) {
+                continue;
+            }
+            String raw = effect.getString("Id");
+            Identifier mapped = LegacyEffectIdMapper.resolve(raw, reporter, null);
+            if (mapped == null || !Registry.STATUS_EFFECT.containsId(mapped)) {
+                warn(reporter, "LegacyPotionEffect",
+                    "unknown custom potion effect '" + raw + "'" + formatContext(context));
+                continue;
+            }
+            int rawId = Registry.STATUS_EFFECT.getRawId(Registry.STATUS_EFFECT.get(mapped));
+            if (rawId < 0) {
+                continue;
+            }
+            effect.putByte("Id", (byte) rawId);
+            converted++;
+        }
+        if (converted > 0) {
+            warn(reporter, "LegacyPotionEffect",
+                "converted CustomPotionEffects string ids (" + converted + ")" + formatContext(context));
         }
     }
 
