@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.registry;
 
+import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.lucky.drop.LuckyDropLine;
 import ie.orangep.reLootplusplus.lucky.block.NativeLuckyBlock;
@@ -110,21 +111,42 @@ public final class AddonLuckyRegistrar {
     }
 
     /**
+     * Returns true when the given block is an addon Lucky Block whose pack is currently enabled.
+     * Returns true for non-addon blocks (unknown blocks are not gated here).
+     */
+    public static boolean isAddonEnabled(Block block) {
+        LuckyAddonData data = BLOCK_TO_DATA.get(block);
+        if (data == null) return true; // not an addon block — don't suppress
+        return AddonDisableStore.isEnabled(data.packId());
+    }
+
+    /**
+     * Returns true if the block is any known addon Lucky Block (enabled or disabled).
+     */
+    public static boolean isAddonBlock(Block block) {
+        return BLOCK_TO_DATA.containsKey(block);
+    }
+
+    /**
      * Returns the drop lines for an addon block, or {@code null} if the block is not an addon block.
+     * Returns an empty list (not null) when the owning pack is currently disabled.
      */
     public static List<String> getDropsForBlock(Block block) {
         LuckyAddonData data = BLOCK_TO_DATA.get(block);
         if (data == null) return null;
+        if (!AddonDisableStore.isEnabled(data.packId())) return Collections.emptyList();
         return data.dropLines();
     }
 
     /**
      * Returns the pre-parsed drop lines for an addon block, or {@code null} if not found.
+     * Returns an empty list (not null) when the owning pack is currently disabled.
      * Prefer this over {@link #getDropsForBlock} at block-break time.
      */
     public static List<LuckyDropLine> getParsedDropsForBlock(Block block) {
         LuckyAddonData data = BLOCK_TO_DATA.get(block);
         if (data == null) return null;
+        if (!AddonDisableStore.isEnabled(data.packId())) return Collections.emptyList();
         return data.parsedDrops();
     }
 

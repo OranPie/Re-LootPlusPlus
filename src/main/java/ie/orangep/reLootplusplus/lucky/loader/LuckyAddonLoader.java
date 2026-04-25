@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.lucky.loader;
 
+import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.diagnostic.SourceLoc;
 import ie.orangep.reLootplusplus.legacy.LegacyDropSanitizer;
@@ -127,7 +128,8 @@ public final class LuckyAddonLoader {
     }
 
     /**
-     * Returns the drop lines for the addon whose plugin_init blockId matches, or empty list if not found.
+     * Returns the drop lines for the addon whose plugin_init blockId matches, or empty if not found
+     * or the owning pack is disabled.
      */
     public static List<String> getDropsForBlockId(String blockId) {
         List<LuckyAddonData> list = addonDataList;
@@ -138,6 +140,7 @@ public final class LuckyAddonLoader {
                 String dataId = data.pluginInit().blockId()
                     .toLowerCase(java.util.Locale.ROOT).replace('.', '_');
                 if (dataId.equals(normalized)) {
+                    if (!AddonDisableStore.isEnabled(data.packId())) return Collections.emptyList();
                     return data.dropLines();
                 }
             }
@@ -155,30 +158,74 @@ public final class LuckyAddonLoader {
 
     // ---- Pre-parsed getters (no re-parsing at block-break time) ----
 
-    /** Pre-parsed merged drops. Use this instead of {@link #getMergedDropLines()} at runtime. */
+    /**
+     * Pre-parsed merged drops filtered to only enabled packs.
+     * Called on every block-break — O(n packs), no re-parsing.
+     */
     public static List<LuckyDropLine> getMergedDrops() {
-        List<LuckyDropLine> d = mergedDrops;
-        return d != null ? d : Collections.emptyList();
+        List<LuckyAddonData> list = addonDataList;
+        if (list == null || list.isEmpty()) {
+            // Fallback to static merged list during early bootstrap
+            List<LuckyDropLine> d = mergedDrops;
+            return d != null ? d : Collections.emptyList();
+        }
+        List<LuckyDropLine> out = new ArrayList<>();
+        for (LuckyAddonData data : list) {
+            if (AddonDisableStore.isEnabled(data.packId())) {
+                out.addAll(data.parsedDrops());
+            }
+        }
+        return Collections.unmodifiableList(out);
     }
 
-    /** Pre-parsed merged bow drops. */
+    /** Pre-parsed merged bow drops filtered to enabled packs. */
     public static List<LuckyDropLine> getMergedBowDrops() {
-        List<LuckyDropLine> d = mergedBowDrops;
-        return d != null ? d : Collections.emptyList();
+        List<LuckyAddonData> list = addonDataList;
+        if (list == null || list.isEmpty()) {
+            List<LuckyDropLine> d = mergedBowDrops;
+            return d != null ? d : Collections.emptyList();
+        }
+        List<LuckyDropLine> out = new ArrayList<>();
+        for (LuckyAddonData data : list) {
+            if (AddonDisableStore.isEnabled(data.packId())) {
+                out.addAll(data.parsedBowDrops());
+            }
+        }
+        return out.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(out);
     }
 
-    /** Pre-parsed merged sword drops (falls back to bow drops). */
+    /** Pre-parsed merged sword drops filtered to enabled packs (falls back to bow drops). */
     public static List<LuckyDropLine> getMergedSwordDrops() {
-        List<LuckyDropLine> d = mergedSwordDrops;
-        if (d != null && !d.isEmpty()) return d;
-        return getMergedBowDrops();
+        List<LuckyAddonData> list = addonDataList;
+        if (list == null || list.isEmpty()) {
+            List<LuckyDropLine> d = mergedSwordDrops;
+            if (d != null && !d.isEmpty()) return d;
+            return getMergedBowDrops();
+        }
+        List<LuckyDropLine> out = new ArrayList<>();
+        for (LuckyAddonData data : list) {
+            if (AddonDisableStore.isEnabled(data.packId())) {
+                out.addAll(data.parsedSwordDrops());
+            }
+        }
+        return out.isEmpty() ? getMergedBowDrops() : Collections.unmodifiableList(out);
     }
 
-    /** Pre-parsed merged potion drops (falls back to bow drops). */
+    /** Pre-parsed merged potion drops filtered to enabled packs (falls back to bow drops). */
     public static List<LuckyDropLine> getMergedPotionDrops() {
-        List<LuckyDropLine> d = mergedPotionDrops;
-        if (d != null && !d.isEmpty()) return d;
-        return getMergedBowDrops();
+        List<LuckyAddonData> list = addonDataList;
+        if (list == null || list.isEmpty()) {
+            List<LuckyDropLine> d = mergedPotionDrops;
+            if (d != null && !d.isEmpty()) return d;
+            return getMergedBowDrops();
+        }
+        List<LuckyDropLine> out = new ArrayList<>();
+        for (LuckyAddonData data : list) {
+            if (AddonDisableStore.isEnabled(data.packId())) {
+                out.addAll(data.parsedPotionDrops());
+            }
+        }
+        return out.isEmpty() ? getMergedBowDrops() : Collections.unmodifiableList(out);
     }
 
     /** Pre-parsed base game drops. */
@@ -188,7 +235,8 @@ public final class LuckyAddonLoader {
     }
 
     /**
-     * Returns the pre-parsed drop lines for the addon whose plugin_init blockId matches.
+     * Returns the pre-parsed drop lines for the addon whose plugin_init blockId matches,
+     * or empty if not found or the owning pack is disabled.
      */
     public static List<LuckyDropLine> getParsedDropsForBlockId(String blockId) {
         List<LuckyAddonData> list = addonDataList;
@@ -199,6 +247,7 @@ public final class LuckyAddonLoader {
                 String dataId = data.pluginInit().blockId()
                     .toLowerCase(java.util.Locale.ROOT).replace('.', '_');
                 if (dataId.equals(normalized)) {
+                    if (!AddonDisableStore.isEnabled(data.packId())) return Collections.emptyList();
                     return data.parsedDrops();
                 }
             }

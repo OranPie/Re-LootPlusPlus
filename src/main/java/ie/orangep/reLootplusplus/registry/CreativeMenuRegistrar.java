@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.registry;
 
+import ie.orangep.reLootplusplus.config.AddonDisableStore;
 import ie.orangep.reLootplusplus.config.model.general.CreativeMenuEntry;
 import ie.orangep.reLootplusplus.diagnostic.Log;
 import ie.orangep.reLootplusplus.legacy.nbt.LenientNbtParser;
@@ -52,6 +53,10 @@ public final class CreativeMenuRegistrar {
 
     private void appendItems(List<ItemStack> stacks, List<CreativeMenuEntry> entries) {
         for (CreativeMenuEntry entry : entries) {
+            // Suppress items from disabled packs without requiring a restart
+            if (entry.sourceLoc() != null && !AddonDisableStore.isEnabled(entry.sourceLoc().packId())) {
+                continue;
+            }
             ItemStack stack = buildStack(entry);
             if (!stack.isEmpty()) {
                 stacks.add(stack);

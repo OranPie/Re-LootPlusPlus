@@ -129,7 +129,7 @@ public final class ReLootPlusPlusMenuScreen extends Screen {
 
         // Pending reload indicator (shown above footer when dirty)
         if (pendingReload) {
-            String reloadMsg = "⟳ Pack changes pending — click Reload or close to apply";
+            String reloadMsg = "⟳ Pack changes pending — drops & creative items suppressed immediately; registered blocks/items survive until restart";
             int msgW = this.textRenderer.getWidth(reloadMsg);
             int msgX = (this.width - msgW) / 2;
             int msgY = this.height - LppUi.FTR_H - 14;

@@ -60,6 +60,13 @@ public final class NativeLuckyBlock extends BlockWithEntity {
     public void onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
         // Fire drops on server side only
         if (!world.isClient() && world instanceof ServerWorld serverWorld) {
+            // If this is an addon Lucky Block whose pack is currently disabled, fire no drops
+            if (AddonLuckyRegistrar.isAddonBlock(state.getBlock())
+                    && !AddonLuckyRegistrar.isAddonEnabled(state.getBlock())) {
+                super.onBreak(world, pos, state, player);
+                return;
+            }
+
             // Respect doDropsOnCreativeMode from the addon's properties.txt
             boolean isCreative = player.isCreative();
             if (isCreative) {

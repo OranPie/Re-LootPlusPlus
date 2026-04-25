@@ -224,6 +224,12 @@ public final class ReLootPlusPlusPackDetailScreen extends Screen {
         String enabledStr = enabled ? "§aEnabled" : "§cDisabled";
         y = LppUi.drawInfoRow(ms, x, y, "Status", enabledStr, maxW, this.textRenderer);
 
+        if (!enabled) {
+            y = LppUi.drawInfoRow(ms, x, y, "Effect",
+                "§eDrops & creative items suppressed instantly. Block/item registrations persist until restart.",
+                maxW, this.textRenderer);
+        }
+
         // Warn count — highlight in orange if > 0
         int wc = warnCount();
         String wcStr = wc == 0 ? "§a0  (no warnings)" : "§e" + wc + " §7(see warnings.tsv)";
