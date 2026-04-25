@@ -79,6 +79,19 @@ jar {
     }
 }
 
+// Add luckyCompat classes to the dev-run JVM classpath.
+// runClient/runServer are JavaExec tasks launched by Loom; they only include the
+// main source set by default. Without this the Fabric entrypoint loader throws
+// ClassNotFoundException for LuckyBootstrapImpl at startup.
+afterEvaluate {
+    ['runClient', 'runServer'].each { taskName ->
+        def t = tasks.findByName(taskName)
+        if (t instanceof JavaExec) {
+            t.classpath = t.classpath + sourceSets.luckyCompat.output
+        }
+    }
+}
+
 // configure the maven publication
 publishing {
     publications {
