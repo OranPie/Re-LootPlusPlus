@@ -1,6 +1,5 @@
 package ie.orangep.reLootplusplus.command;
 
-import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -22,80 +21,87 @@ import net.minecraft.util.registry.Registry;
 
 import java.util.Collection;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * Gives a Lucky Block item (base or addon) with a specific luck value to a player.
  *
  * <p>Usage:
  * <pre>
- *   /givelucky                              — give self 1 Lucky Block (luck 0)
- *   /givelucky &lt;luck&gt;                       — give self Lucky Block with given luck
- *   /givelucky &lt;target&gt; &lt;luck&gt;             — give target player(s) Lucky Block with given luck
+ *   /givelucky                                    — self, luck 0, 1 block
+ *   /givelucky &lt;luck&gt;                             — self, luck N, 1 block
+ *   /givelucky &lt;luck&gt; &lt;count&gt;                     — self, luck N, M blocks
+ *   /givelucky &lt;luck&gt; &lt;count&gt; &lt;target&gt;           — target, luck N, M blocks
  *
- *   /givelucky addon &lt;packId|blockId&gt;       — give self an addon Lucky Block (luck 0)
- *   /givelucky addon &lt;packId|blockId&gt; &lt;luck&gt;         — give self addon block with luck
- *   /givelucky addon &lt;packId|blockId&gt; &lt;luck&gt; &lt;target&gt; — give target addon block with luck
+ *   /givelucky addon &lt;blockId&gt;                    — self, addon block, luck 0, 1 block
+ *   /givelucky addon &lt;blockId&gt; &lt;luck&gt;             — self, addon block, luck N, 1 block
+ *   /givelucky addon &lt;blockId&gt; &lt;luck&gt; &lt;count&gt;     — self, addon block, luck N, M blocks
+ *   /givelucky addon &lt;blockId&gt; &lt;luck&gt; &lt;count&gt; &lt;target&gt; — target, addon block
  * </pre>
  *
- * <p>The addon identifier can be either the pack ID (e.g. {@code lucky_astral_lucky_block})
- * or the normalized block ID (e.g. {@code astral_fairy}).
- * Luck is clamped to [-100, 100]. Requires operator permission level 2.
+ * <p>Luck is clamped to [-100, 100]. Count is 1–64.
+ * Requires operator permission level 2.
  */
 public final class GiveLuckyCommand {
 
     private GiveLuckyCommand() {}
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+        var luckArg   = CommandManager.argument("luck",  IntegerArgumentType.integer(-100, 100));
+        var countArg  = CommandManager.argument("count", IntegerArgumentType.integer(1, 64));
+        var targetArg = CommandManager.argument("target", EntityArgumentType.players());
+
         dispatcher.register(CommandManager.literal("givelucky")
-            .requires(source -> source.hasPermissionLevel(2))
-            // /givelucky  →  give self, base block, luck 0
+            .requires(src -> src.hasPermissionLevel(2))
+            // /givelucky
             .executes(ctx -> give(ctx.getSource(), selfList(ctx.getSource()),
-                LuckyRegistrar.LUCKY_BLOCK_ITEM, 0))
+                LuckyRegistrar.LUCKY_BLOCK_ITEM, 0, 1))
             // /givelucky <luck>
             .then(CommandManager.argument("luck", IntegerArgumentType.integer(-100, 100))
                 .executes(ctx -> give(ctx.getSource(), selfList(ctx.getSource()),
                     LuckyRegistrar.LUCKY_BLOCK_ITEM,
-                    IntegerArgumentType.getInteger(ctx, "luck"))))
-            // /givelucky <target>  →  give target, luck 0
-            .then(CommandManager.argument("target", EntityArgumentType.players())
-                .executes(ctx -> give(ctx.getSource(),
-                    EntityArgumentType.getPlayers(ctx, "target"),
-                    LuckyRegistrar.LUCKY_BLOCK_ITEM, 0))
-                // /givelucky <target> <luck>
-                .then(CommandManager.argument("luck", IntegerArgumentType.integer(-100, 100))
-                    .executes(ctx -> give(ctx.getSource(),
-                        EntityArgumentType.getPlayers(ctx, "target"),
+                    IntegerArgumentType.getInteger(ctx, "luck"), 1))
+                // /givelucky <luck> <count>
+                .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 64))
+                    .executes(ctx -> give(ctx.getSource(), selfList(ctx.getSource()),
                         LuckyRegistrar.LUCKY_BLOCK_ITEM,
-                        IntegerArgumentType.getInteger(ctx, "luck")))))
-            // /givelucky addon <packId|blockId> [<luck>] [<target>]
+                        IntegerArgumentType.getInteger(ctx, "luck"),
+                        IntegerArgumentType.getInteger(ctx, "count")))
+                    // /givelucky <luck> <count> <target>
+                    .then(CommandManager.argument("target", EntityArgumentType.players())
+                        .executes(ctx -> give(ctx.getSource(),
+                            EntityArgumentType.getPlayers(ctx, "target"),
+                            LuckyRegistrar.LUCKY_BLOCK_ITEM,
+                            IntegerArgumentType.getInteger(ctx, "luck"),
+                            IntegerArgumentType.getInteger(ctx, "count"))))))
+            // /givelucky addon <blockId> [<luck> [<count> [<target>]]]
             .then(CommandManager.literal("addon")
-                .then(CommandManager.argument("addonId", StringArgumentType.word())
+                .then(CommandManager.argument("blockId", StringArgumentType.word())
                     .suggests((ctx, builder) -> {
-                        // Suggest both pack IDs and block IDs for convenience
-                        for (Map.Entry<String, LuckyAddonData> e :
-                                AddonLuckyRegistrar.getBlockIdToAddonMap().entrySet()) {
-                            builder.suggest(e.getValue().packId()); // by pack id
-                            builder.suggest(e.getKey());             // by block id
-                        }
+                        AddonLuckyRegistrar.getBlockIdToAddonMap().keySet()
+                            .forEach(builder::suggest);
                         return builder.buildFuture();
                     })
-                    // /givelucky addon <id>  → luck 0, give self
-                    .executes(ctx -> giveAddon(ctx.getSource(),
-                        selfList(ctx.getSource()),
-                        StringArgumentType.getString(ctx, "addonId"), 0))
-                    // /givelucky addon <id> <luck>
+                    // /givelucky addon <blockId>
+                    .executes(ctx -> giveAddon(ctx.getSource(), selfList(ctx.getSource()),
+                        StringArgumentType.getString(ctx, "blockId"), 0, 1))
+                    // /givelucky addon <blockId> <luck>
                     .then(CommandManager.argument("luck", IntegerArgumentType.integer(-100, 100))
-                        .executes(ctx -> giveAddon(ctx.getSource(),
-                            selfList(ctx.getSource()),
-                            StringArgumentType.getString(ctx, "addonId"),
-                            IntegerArgumentType.getInteger(ctx, "luck")))
-                        // /givelucky addon <id> <luck> <target>
-                        .then(CommandManager.argument("target", EntityArgumentType.players())
-                            .executes(ctx -> giveAddon(ctx.getSource(),
-                                EntityArgumentType.getPlayers(ctx, "target"),
-                                StringArgumentType.getString(ctx, "addonId"),
-                                IntegerArgumentType.getInteger(ctx, "luck")))))))
+                        .executes(ctx -> giveAddon(ctx.getSource(), selfList(ctx.getSource()),
+                            StringArgumentType.getString(ctx, "blockId"),
+                            IntegerArgumentType.getInteger(ctx, "luck"), 1))
+                        // /givelucky addon <blockId> <luck> <count>
+                        .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 64))
+                            .executes(ctx -> giveAddon(ctx.getSource(), selfList(ctx.getSource()),
+                                StringArgumentType.getString(ctx, "blockId"),
+                                IntegerArgumentType.getInteger(ctx, "luck"),
+                                IntegerArgumentType.getInteger(ctx, "count")))
+                            // /givelucky addon <blockId> <luck> <count> <target>
+                            .then(CommandManager.argument("target", EntityArgumentType.players())
+                                .executes(ctx -> giveAddon(ctx.getSource(),
+                                    EntityArgumentType.getPlayers(ctx, "target"),
+                                    StringArgumentType.getString(ctx, "blockId"),
+                                    IntegerArgumentType.getInteger(ctx, "luck"),
+                                    IntegerArgumentType.getInteger(ctx, "count"))))))))
         );
     }
 
@@ -105,14 +111,14 @@ public final class GiveLuckyCommand {
 
     private static int give(ServerCommandSource source,
                              Collection<ServerPlayerEntity> targets,
-                             Item item, int luck) {
+                             Item item, int luck, int count) {
         if (targets.isEmpty()) {
             source.sendError(new LiteralText("givelucky: no targets matched"));
             return 0;
         }
         int given = 0;
         for (ServerPlayerEntity player : targets) {
-            ItemStack stack = new ItemStack(item, 1);
+            ItemStack stack = new ItemStack(item, count);
             NativeLuckyBlockEntity.setLuckOnItemStack(stack, luck);
             if (!player.getInventory().insertStack(stack)) {
                 player.dropItem(stack, false, false);
@@ -120,53 +126,37 @@ public final class GiveLuckyCommand {
             given++;
         }
         String luckLabel = luck >= 0 ? "+" + luck : String.valueOf(luck);
-        String itemLabel = Registry.ITEM.getId(item).toString();
-        sendFeedback(source, targets, given, itemLabel, luckLabel);
+        String itemLabel = Registry.ITEM.getId(item).getPath(); // just the path, cleaner in chat
+        if (targets.size() == 1) {
+            source.sendFeedback(new LiteralText(
+                "givelucky: gave " + count + "× " + itemLabel
+                + " (luck " + luckLabel + ") to " + targets.iterator().next().getName().getString()),
+                false);
+        } else {
+            source.sendFeedback(new LiteralText(
+                "givelucky: gave " + count + "× " + itemLabel
+                + " (luck " + luckLabel + ") to " + given + " players"), false);
+        }
         return given;
     }
 
     private static int giveAddon(ServerCommandSource source,
                                   Collection<ServerPlayerEntity> targets,
-                                  String addonId, int luck) {
-        Item item = resolveAddonItem(addonId);
+                                  String blockId, int luck, int count) {
+        Item item = resolveAddonItem(blockId);
         if (item == null) {
             source.sendError(new LiteralText(
-                "givelucky: unknown addon '" + addonId
-                + "' — use pack ID or block ID (tab-complete for options)"));
+                "givelucky: unknown block ID '" + blockId + "' (tab-complete for options)"));
             return 0;
         }
-        return give(source, targets, item, luck);
+        return give(source, targets, item, luck, count);
     }
 
-    /**
-     * Resolves an addon Lucky Block item by pack ID or normalized block ID.
-     * Returns {@code null} if no match is found.
-     */
+    /** Resolves an addon Lucky Block item by normalized block ID. */
     private static Item resolveAddonItem(String query) {
-        Map<String, LuckyAddonData> byBlockId = AddonLuckyRegistrar.getBlockIdToAddonMap();
-
-        // 1. Try direct block-id match (normalized)
         String normalizedQuery = query.toLowerCase(Locale.ROOT).replace('.', '_');
-        LuckyAddonData direct = byBlockId.get(normalizedQuery);
-        if (direct != null) {
-            return lookupItem(direct);
-        }
-
-        // 2. Try matching by pack ID
-        for (LuckyAddonData data : byBlockId.values()) {
-            if (data.packId().equalsIgnoreCase(query)) {
-                return lookupItem(data);
-            }
-        }
-
-        // 3. Try partial pack-id prefix match (convenience for long pack IDs)
-        for (LuckyAddonData data : byBlockId.values()) {
-            if (data.packId().toLowerCase(Locale.ROOT).startsWith(normalizedQuery)) {
-                return lookupItem(data);
-            }
-        }
-
-        return null;
+        LuckyAddonData data = AddonLuckyRegistrar.getBlockIdToAddonMap().get(normalizedQuery);
+        return data != null ? lookupItem(data) : null;
     }
 
     /** Looks up the registered Item for the block declared by this addon's plugin.init. */
@@ -178,23 +168,7 @@ public final class GiveLuckyCommand {
         Identifier id = new Identifier("lucky", blockId);
         if (!Registry.ITEM.containsId(id)) return null;
         Item item = Registry.ITEM.get(id);
-        // Guard: must actually be a NativeLuckyBlockItem
         return item instanceof NativeLuckyBlockItem ? item : null;
-    }
-
-    private static void sendFeedback(ServerCommandSource source,
-                                      Collection<ServerPlayerEntity> targets,
-                                      int given, String itemLabel, String luckLabel) {
-        if (targets.size() == 1) {
-            ServerPlayerEntity only = targets.iterator().next();
-            source.sendFeedback(new LiteralText(
-                "givelucky: gave " + itemLabel + " (luck " + luckLabel
-                + ") to " + only.getName().getString()), false);
-        } else {
-            source.sendFeedback(new LiteralText(
-                "givelucky: gave " + itemLabel + " (luck " + luckLabel
-                + ") to " + given + " players"), false);
-        }
     }
 
     private static Collection<ServerPlayerEntity> selfList(ServerCommandSource source) {
