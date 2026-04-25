@@ -1,5 +1,6 @@
 package ie.orangep.reLootplusplus.bootstrap;
 
+import ie.orangep.reLootplusplus.command.GiveLuckyCommand;
 import ie.orangep.reLootplusplus.command.LuckyDropEvalCommand;
 import ie.orangep.reLootplusplus.diagnostic.LegacyWarnReporter;
 import ie.orangep.reLootplusplus.lucky.crafting.LuckyLuckCraftingLoader;
@@ -46,6 +47,7 @@ public final class LuckyBootstrapImpl implements LuckyBootstrap {
     @Override
     public void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher, boolean dedicated) {
         LuckyDropEvalCommand.register(dispatcher::register);
+        GiveLuckyCommand.register(dispatcher);
     }
 
     @Override

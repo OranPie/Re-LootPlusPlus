@@ -4,6 +4,7 @@ import ie.orangep.reLootplusplus.bootstrap.Bootstrap;
 import ie.orangep.reLootplusplus.bootstrap.LuckyBootstrap;
 import ie.orangep.reLootplusplus.bootstrap.LuckyCompat;
 import ie.orangep.reLootplusplus.command.DumpNbtCommand;
+import ie.orangep.reLootplusplus.command.EditNbtCommand;
 import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
@@ -21,6 +22,7 @@ public class ReLootPlusPlus implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, dedicated) -> {
             DumpNbtCommand.register(dispatcher::register);
+            EditNbtCommand.register(dispatcher::register);
             LuckyCompat.get().registerCommands(dispatcher, dedicated);
         });
     }

@@ -37,42 +37,41 @@ public final class LuckyLuckModifierRecipe extends SpecialCraftingRecipe {
         Map<String, Integer> modifiers = LuckyLuckCraftingLoader.getEffectiveModifiers();
         if (modifiers.isEmpty()) return false;
 
-        boolean foundLuckyBlock = false;
-        boolean foundModifier = false;
         int luckyBlockCount = 0;
         int modifierCount = 0;
-        int nonEmptyCount = 0;
+        String modifierKey = null; // track which modifier is being used (must be uniform)
 
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
             if (stack.isEmpty()) continue;
-            nonEmptyCount++;
 
             if (stack.getItem() instanceof NativeLuckyBlockItem) {
                 luckyBlockCount++;
-                foundLuckyBlock = true;
             } else {
                 // Check if this item is a registered luck modifier
                 Identifier itemId = net.minecraft.util.registry.Registry.ITEM.getId(stack.getItem());
                 String key = itemId.getPath(); // try without namespace first
                 if (!modifiers.containsKey(key)) {
-                    key = itemId.toString(); // try full id
+                    key = itemId.toString(); // try full namespaced id
                 }
-                if (modifiers.containsKey(key)) {
-                    modifierCount++;
-                    foundModifier = true;
-                }
+                if (!modifiers.containsKey(key)) return false; // unknown item in grid
+                // All modifier slots must be the same item type
+                if (modifierKey != null && !modifierKey.equals(key)) return false;
+                modifierKey = key;
+                modifierCount++;
             }
         }
 
-        return nonEmptyCount == 2 && luckyBlockCount == 1 && modifierCount == 1 && foundLuckyBlock && foundModifier;
+        // Exactly 1 lucky block; 1–8 identical modifier items; no unknown items
+        return luckyBlockCount == 1 && modifierCount >= 1 && modifierCount <= 8;
     }
 
     @Override
     public ItemStack craft(CraftingInventory inv) {
         Map<String, Integer> modifiers = LuckyLuckCraftingLoader.getEffectiveModifiers();
         ItemStack luckyBlockStack = ItemStack.EMPTY;
-        int delta = 0;
+        int perItemDelta = 0;
+        int modifierCount = 0;
 
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
@@ -85,9 +84,14 @@ public final class LuckyLuckModifierRecipe extends SpecialCraftingRecipe {
                 String key = itemId.getPath();
                 if (!modifiers.containsKey(key)) key = itemId.toString();
                 Integer mod = modifiers.get(key);
-                if (mod != null) delta = mod;
+                if (mod != null) {
+                    perItemDelta = mod;
+                    modifierCount++;
+                }
             }
         }
+        // Total delta scales with how many modifier items are used (e.g., 8 diamonds = 8×2 = +16)
+        int delta = perItemDelta * modifierCount;
 
         if (luckyBlockStack.isEmpty()) return ItemStack.EMPTY;
 
